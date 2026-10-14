@@ -258,13 +258,67 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 7. Berikan hak akses eksekusi ke anon, authenticated, dan service_role
+-- 7. FUNCTION: Super Admin Penyesuaian Saldo (Koreksi)
+CREATE OR REPLACE FUNCTION public.admin_adjust_app_wallet(
+    p_target_user_id UUID,
+    p_type TEXT,            -- 'CREDIT' atau 'DEBIT'
+    p_amount NUMERIC,
+    p_reason TEXT,
+    p_admin_id UUID DEFAULT NULL,
+    p_admin_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_title TEXT;
+    v_desc TEXT;
+    v_admin_email TEXT;
+    v_result JSONB;
+BEGIN
+    IF p_admin_id IS NOT NULL THEN
+        SELECT email INTO v_admin_email FROM auth.users WHERE id = p_admin_id;
+    END IF;
+    IF v_admin_email IS NULL THEN
+        v_admin_email := 'Admin Sistem';
+    END IF;
+
+    IF p_reason IS NULL OR TRIM(p_reason) = '' THEN
+        RAISE EXCEPTION 'Alasan penyesuaian saldo wajib diisi untuk kepatuhan audit pembukuan';
+    END IF;
+
+    IF p_type = 'CREDIT' THEN
+        v_title := 'Penyesuaian Saldo oleh Super Admin (Kredit/Penambahan)';
+        v_desc  := 'Penambahan saldo sebesar Rp ' || TO_CHAR(p_amount, 'FM999,999,999') || 
+                   ' oleh Admin (' || v_admin_email || '). Alasan: ' || p_reason;
+    ELSE
+        v_title := 'Penyesuaian Saldo oleh Super Admin (Debet/Koreksi Salah Input)';
+        v_desc  := 'Pemotongan saldo sebesar Rp ' || TO_CHAR(p_amount, 'FM999,999,999') || 
+                   ' karena koreksi pembukuan oleh Admin (' || v_admin_email || '). Alasan: ' || p_reason;
+    END IF;
+
+    v_result := public.process_app_wallet_mutation(
+        p_user_id      := p_target_user_id,
+        p_type         := p_type,
+        p_category     := 'ADJUSTMENT',
+        p_amount       := p_amount,
+        p_title        := v_title,
+        p_description  := v_desc,
+        p_reference_id := NULL,
+        p_admin_id     := p_admin_id,
+        p_admin_notes  := COALESCE(p_admin_notes, p_reason)
+    );
+
+    RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 8. Berikan hak akses eksekusi ke anon, authenticated, dan service_role
 GRANT EXECUTE ON FUNCTION public.admin_reset_user_password(UUID, TEXT) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_update_user_email(UUID, TEXT) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_update_user(UUID, TEXT, TEXT, TEXT, JSONB) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_delete_user(UUID) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_get_user_detail(UUID) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_all_registered_users_wallets() TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_adjust_app_wallet(UUID, TEXT, NUMERIC, TEXT, UUID, TEXT) TO anon, authenticated, service_role;
 
--- 8. Reload cache schema PostgREST
+-- 9. Reload cache schema PostgREST
 NOTIFY pgrst, 'reload schema';

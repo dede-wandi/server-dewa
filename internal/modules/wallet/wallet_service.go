@@ -425,11 +425,16 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 
 	// 1. Try Supabase RPC
 	if s.sbClient != nil && token != "" {
+		var adminID interface{} = nil
+		if adminUser != nil && adminUser.ID != "" {
+			adminID = adminUser.ID
+		}
 		rpcPayload := map[string]interface{}{
 			"p_target_user_id": req.TargetUserID,
 			"p_type":           req.Type,
 			"p_amount":         req.Amount,
 			"p_reason":         req.Reason,
+			"p_admin_id":       adminID,
 			"p_admin_notes":    req.AdminNotes,
 		}
 		if respBytes, err := s.sbClient.CallRPC("admin_adjust_app_wallet", rpcPayload, token); err == nil {
@@ -465,8 +470,11 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 		}
 	}
 
-	// 2. In-Memory fallback
-	wal := s.repo.GetOrCreateWallet(req.TargetUserID, "")
+	// 2. In-Memory fallback (sync live balance first if available)
+	wal, _ := s.GetBalance(req.TargetUserID, "", token)
+	if wal == nil {
+		wal = s.repo.GetOrCreateWallet(req.TargetUserID, "")
+	}
 	balanceBefore := wal.Balance
 	var balanceAfter float64
 
