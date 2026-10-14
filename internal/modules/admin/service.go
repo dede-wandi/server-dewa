@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,6 +22,7 @@ type Service interface {
 	DeleteUser(userID, token string) error
 	LockUser(userID string) (bool, error)
 	UnlockUser(userID string) (bool, error)
+	TopUpUser(adminUser *supabase.User, token string, req AdminTopUpRequest) (interface{}, error)
 	ListAllTransactions() (interface{}, int)
 	ListAllPointTransactions() (interface{}, int)
 	AdjustPoints(targetUserID, adjType string, amount int64, reason, adminEmail string) (interface{}, error)
@@ -31,13 +33,15 @@ type Service interface {
 type adminService struct {
 	repo          Repository
 	walletHandler *wallet.Handler
+	sbClient      *supabase.Client
 }
 
 // NewService creates a new instance of Admin Service
-func NewService(repo Repository, walletHandler *wallet.Handler) Service {
+func NewService(repo Repository, walletHandler *wallet.Handler, sbClient *supabase.Client) Service {
 	return &adminService{
 		repo:          repo,
 		walletHandler: walletHandler,
+		sbClient:      sbClient,
 	}
 }
 
@@ -231,6 +235,14 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 	var foundUser *UserListItem
 	var transactions interface{} = []interface{}{}
 
+	// Always retrieve complete Supabase Auth User details and metadata
+	var authUser *supabase.User
+	if s.repo != nil {
+		if directUser, err := s.repo.FetchAuthAdminUser(cleanID); err == nil && directUser != nil {
+			authUser = directUser
+		}
+	}
+
 	// 1. Try finding user from registered users & wallets RPC
 	if s.repo != nil {
 		if rawUsers, err := s.repo.FetchRegisteredUsersWallets(""); err == nil && len(rawUsers) > 0 {
@@ -273,60 +285,45 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 			}
 		}
 
-		// 2. Fallback to Supabase Auth Admin API direct lookup or list
-		if foundUser == nil {
-			var u *supabase.User
-			if directUser, err := s.repo.FetchAuthAdminUser(cleanID); err == nil && directUser != nil {
-				u = directUser
-			} else if authUsers, err := s.repo.FetchAuthAdminUsers(1, 100); err == nil && len(authUsers) > 0 {
-				for _, au := range authUsers {
-					if strings.EqualFold(au.ID, cleanID) {
-						auCopy := au
-						u = &auCopy
-						break
-					}
+		// 2. Fallback to Supabase Auth Admin user
+		if foundUser == nil && authUser != nil {
+			userRoles := authUser.GetRoles()
+			primaryRole := "user"
+			if len(userRoles) > 0 {
+				primaryRole = userRoles[0]
+			}
+			def := role.GlobalRegistry.Resolve(primaryRole, authUser.Email)
+
+			var balance float64
+			var points int64
+			var isLocked bool
+			var updatedAt string
+
+			if s.walletHandler != nil {
+				wal, _ := s.walletHandler.GetWalletService().GetBalance(authUser.ID, authUser.Email, "")
+				if wal != nil {
+					balance = wal.Balance
+					points = wal.Points
+					isLocked = wal.IsLocked
+					updatedAt = wal.UpdatedAt.Format(time.RFC3339)
+				} else {
+					updatedAt = authUser.CreatedAt
 				}
+			} else {
+				updatedAt = authUser.CreatedAt
 			}
 
-			if u != nil {
-				userRoles := u.GetRoles()
-				primaryRole := "user"
-				if len(userRoles) > 0 {
-					primaryRole = userRoles[0]
-				}
-				def := role.GlobalRegistry.Resolve(primaryRole, u.Email)
-
-				var balance float64
-				var points int64
-				var isLocked bool
-				var updatedAt string
-
-				if s.walletHandler != nil {
-					wal, _ := s.walletHandler.GetWalletService().GetBalance(u.ID, u.Email, "")
-					if wal != nil {
-						balance = wal.Balance
-						points = wal.Points
-						isLocked = wal.IsLocked
-						updatedAt = wal.UpdatedAt.Format(time.RFC3339)
-					} else {
-						updatedAt = u.CreatedAt
-					}
-				} else {
-					updatedAt = u.CreatedAt
-				}
-
-				foundUser = &UserListItem{
-					UserID:    u.ID,
-					UserEmail: u.Email,
-					Role:      string(def.Role),
-					RoleName:  def.Name,
-					Category:  string(def.Category),
-					Balance:   balance,
-					Points:    points,
-					IsLocked:  isLocked,
-					CreatedAt: u.CreatedAt,
-					UpdatedAt: updatedAt,
-				}
+			foundUser = &UserListItem{
+				UserID:    authUser.ID,
+				UserEmail: authUser.Email,
+				Role:      string(def.Role),
+				RoleName:  def.Name,
+				Category:  string(def.Category),
+				Balance:   balance,
+				Points:    points,
+				IsLocked:  isLocked,
+				CreatedAt: authUser.CreatedAt,
+				UpdatedAt: updatedAt,
 			}
 		}
 	}
@@ -364,19 +361,200 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 		}
 	}
 
+	// Extract full profile information from user_metadata and app_metadata
+	var fullName, phone, address, businessName, businessPhone, businessAddress, waTarget1, waTarget2, waTarget3 string
+	var userMeta map[string]interface{}
+	var appMeta map[string]interface{}
+
+	if authUser != nil {
+		userMeta = authUser.UserMetadata
+		appMeta = authUser.AppMetadata
+		phone = authUser.Phone
+
+		if userMeta != nil {
+			if fn, ok := userMeta["full_name"].(string); ok && fn != "" {
+				fullName = fn
+			} else if dn, ok := userMeta["display_name"].(string); ok && dn != "" {
+				fullName = dn
+			}
+			if p, ok := userMeta["phone"].(string); ok && p != "" {
+				phone = p
+			}
+			address, _ = userMeta["address"].(string)
+			businessName, _ = userMeta["business_name"].(string)
+			businessPhone, _ = userMeta["business_phone"].(string)
+			businessAddress, _ = userMeta["business_address"].(string)
+			waTarget1, _ = userMeta["wa_target_1"].(string)
+			waTarget2, _ = userMeta["wa_target_2"].(string)
+			waTarget3, _ = userMeta["wa_target_3"].(string)
+		}
+	}
+
 	return &UserDetailResponse{
-		UserID:       foundUser.UserID,
-		UserEmail:    foundUser.UserEmail,
-		Role:         foundUser.Role,
-		RoleName:     foundUser.RoleName,
-		Category:     foundUser.Category,
-		Balance:      foundUser.Balance,
-		Points:       foundUser.Points,
-		IsLocked:     foundUser.IsLocked,
-		CreatedAt:    foundUser.CreatedAt,
-		UpdatedAt:    foundUser.UpdatedAt,
-		Transactions: transactions,
+		UserID:          foundUser.UserID,
+		UserEmail:       foundUser.UserEmail,
+		Role:            foundUser.Role,
+		RoleName:        foundUser.RoleName,
+		Category:        foundUser.Category,
+		FullName:        fullName,
+		Phone:           phone,
+		Address:         address,
+		BusinessName:    businessName,
+		BusinessPhone:   businessPhone,
+		BusinessAddress: businessAddress,
+		WATarget1:       waTarget1,
+		WATarget2:       waTarget2,
+		WATarget3:       waTarget3,
+		Balance:         foundUser.Balance,
+		Points:          foundUser.Points,
+		IsLocked:        foundUser.IsLocked,
+		CreatedAt:       foundUser.CreatedAt,
+		UpdatedAt:       foundUser.UpdatedAt,
+		UserMetadata:    userMeta,
+		AppMetadata:     appMeta,
+		Transactions:    transactions,
 	}, nil
+}
+
+func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req AdminTopUpRequest) (interface{}, error) {
+	req.TargetUserID = strings.TrimSpace(req.TargetUserID)
+	if req.TargetUserID == "" {
+		return nil, errors.New("Target user ID wajib disertakan")
+	}
+	if req.Amount <= 0 {
+		return nil, errors.New("Nominal top up harus lebih besar dari 0")
+	}
+
+	channel := strings.TrimSpace(req.Channel)
+	if channel == "" {
+		channel = "Deposit Tunai / Transfer Admin"
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		adminEmail := "Super Admin"
+		if adminUser != nil && adminUser.Email != "" {
+			adminEmail = adminUser.Email
+		}
+		title = fmt.Sprintf("Top Up Saldo oleh Admin (%s)", adminEmail)
+	}
+
+	desc := strings.TrimSpace(req.Description)
+	if desc == "" {
+		desc = fmt.Sprintf("Penambahan saldo pengguna via %s", channel)
+		if req.Notes != "" {
+			desc += fmt.Sprintf(" [Catatan: %s]", req.Notes)
+		}
+	}
+
+	refID := fmt.Sprintf("TOPUP-ADM-%s-%d", time.Now().Format("20060102"), time.Now().UnixNano()%100000)
+
+	// 1. Try Supabase RPC process_app_wallet_mutation
+	if s.sbClient != nil {
+		rpcPayload := map[string]interface{}{
+			"p_user_id":      req.TargetUserID,
+			"p_type":         wallet.TypeCredit,
+			"p_category":     wallet.CategoryTopup,
+			"p_amount":       req.Amount,
+			"p_title":        title,
+			"p_description":  desc,
+			"p_reference_id": refID,
+		}
+		if respBytes, err := s.sbClient.CallRPC("process_app_wallet_mutation", rpcPayload, token); err == nil {
+			var rpcRes map[string]interface{}
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
+				balAfter, _ := rpcRes["balance_after"].(float64)
+				balBefore, _ := rpcRes["balance_before"].(float64)
+				trxCode, _ := rpcRes["transaction_code"].(string)
+
+				return map[string]interface{}{
+					"status":  "success",
+					"message": fmt.Sprintf("Saldo sebesar Rp %s berhasil ditambahkan ke akun pengguna!", formatRupiahAdmin(int64(req.Amount))),
+					"transaction": map[string]interface{}{
+						"transaction_code": trxCode,
+						"user_id":          req.TargetUserID,
+						"type":             wallet.TypeCredit,
+						"category":         wallet.CategoryTopup,
+						"amount":           req.Amount,
+						"balance_before":   balBefore,
+						"balance_after":    balAfter,
+						"title":            title,
+						"description":      desc,
+						"reference_id":     refID,
+						"status":           "SUCCESS",
+						"created_at":       time.Now().Format(time.RFC3339),
+					},
+					"target_user_wallet": map[string]interface{}{
+						"user_id":        req.TargetUserID,
+						"balance_before": balBefore,
+						"balance_after":  balAfter,
+						"formatted":      fmt.Sprintf("Rp %s", formatRupiahAdmin(int64(balAfter))),
+					},
+				}, nil
+			}
+		}
+	}
+
+	// 2. Fallback to runtime wallet
+	if s.walletHandler != nil {
+		targetWal, _ := s.walletHandler.GetWalletService().GetBalance(req.TargetUserID, "", "")
+		if targetWal == nil {
+			return nil, errors.New("Pengguna tidak ditemukan")
+		}
+		balBefore := targetWal.Balance
+		targetWal.Balance += req.Amount
+		balAfter := targetWal.Balance
+
+		return map[string]interface{}{
+			"status":  "success",
+			"message": fmt.Sprintf("Saldo sebesar Rp %s berhasil ditambahkan ke akun pengguna!", formatRupiahAdmin(int64(req.Amount))),
+			"transaction": map[string]interface{}{
+				"transaction_code": refID,
+				"user_id":          req.TargetUserID,
+				"type":             wallet.TypeCredit,
+				"category":         wallet.CategoryTopup,
+				"amount":           req.Amount,
+				"balance_before":   balBefore,
+				"balance_after":    balAfter,
+				"title":            title,
+				"description":      desc,
+				"reference_id":     refID,
+				"status":           "SUCCESS",
+				"created_at":       time.Now().Format(time.RFC3339),
+			},
+			"target_user_wallet": map[string]interface{}{
+				"user_id":        req.TargetUserID,
+				"balance_before": balBefore,
+				"balance_after":  balAfter,
+				"formatted":      fmt.Sprintf("Rp %s", formatRupiahAdmin(int64(balAfter))),
+			},
+		}, nil
+	}
+
+	return nil, errors.New("Layanan dompet tidak tersedia")
+}
+
+func formatRupiahAdmin(amount int64) string {
+	str := fmt.Sprintf("%d", amount)
+	n := len(str)
+	if n <= 3 {
+		return str
+	}
+	var res []byte
+	rem := n % 3
+	if rem > 0 {
+		res = append(res, []byte(str[:rem])...)
+		if rem < n {
+			res = append(res, '.')
+		}
+	}
+	for i := rem; i < n; i += 3 {
+		res = append(res, []byte(str[i:i+3])...)
+		if i+3 < n {
+			res = append(res, '.')
+		}
+	}
+	return string(res)
 }
 
 func (s *adminService) ResetPassword(userID, newPassword, token string) error {

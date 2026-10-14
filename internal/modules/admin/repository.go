@@ -124,8 +124,56 @@ func (r *supabaseRepository) UpdateUser(userID string, req UpdateUserRequest, to
 		if req.Role != "" {
 			updatePayload["app_metadata"] = map[string]interface{}{"role": req.Role}
 		}
-		if req.DisplayName != "" {
-			updatePayload["user_metadata"] = map[string]interface{}{"full_name": req.DisplayName, "display_name": req.DisplayName}
+
+		// Retrieve existing user metadata to merge safely without overwriting
+		userMeta := make(map[string]interface{})
+		if existingUser, err := r.sbClient.AdminGetUser(userID); err == nil && existingUser != nil && existingUser.UserMetadata != nil {
+			for k, v := range existingUser.UserMetadata {
+				userMeta[k] = v
+			}
+		}
+
+		// Merge any custom user_metadata provided
+		if req.UserMetadata != nil {
+			for k, v := range req.UserMetadata {
+				userMeta[k] = v
+			}
+		}
+
+		// Merge specific profile fields
+		if req.FullName != "" {
+			userMeta["full_name"] = req.FullName
+		} else if req.DisplayName != "" {
+			userMeta["full_name"] = req.DisplayName
+			userMeta["display_name"] = req.DisplayName
+		}
+		if req.Phone != "" {
+			userMeta["phone"] = req.Phone
+		}
+		if req.Address != "" {
+			userMeta["address"] = req.Address
+		}
+		if req.BusinessName != "" {
+			userMeta["business_name"] = req.BusinessName
+		}
+		if req.BusinessPhone != "" {
+			userMeta["business_phone"] = req.BusinessPhone
+		}
+		if req.BusinessAddress != "" {
+			userMeta["business_address"] = req.BusinessAddress
+		}
+		if req.WATarget1 != "" {
+			userMeta["wa_target_1"] = req.WATarget1
+		}
+		if req.WATarget2 != "" {
+			userMeta["wa_target_2"] = req.WATarget2
+		}
+		if req.WATarget3 != "" {
+			userMeta["wa_target_3"] = req.WATarget3
+		}
+
+		if len(userMeta) > 0 {
+			updatePayload["user_metadata"] = userMeta
 		}
 
 		if len(updatePayload) > 0 {

@@ -27,7 +27,7 @@ type Handler struct {
 // NewHandler constructs a new Admin Handler with injected Service and Repository
 func NewHandler(sbClient *supabase.Client, walletHandler *wallet.Handler) *Handler {
 	repo := NewRepository(sbClient)
-	svc := NewService(repo, walletHandler)
+	svc := NewService(repo, walletHandler, sbClient)
 
 	return &Handler{
 		adminService:  svc,
@@ -45,7 +45,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/dashboard", h.DashboardStats)
 	r.Get("/stats", h.DashboardStats)
 
-	// User & Wallet Management (Super Admin Full Authority)
+	// User Management (Super Admin Full Authority)
 	r.Get("/users", h.ListUsers)
 	r.Get("/users/{id}", h.GetUserDetail)
 	r.Put("/users/{id}", h.UpdateUser)
@@ -56,15 +56,23 @@ func (h *Handler) Routes() chi.Router {
 	r.Put("/users/{id}/lock", h.LockUser)
 	r.Put("/users/{id}/unlock", h.UnlockUser)
 
-	// Platform-wide Ledger & Transactions (All users)
-	r.Get("/transactions", h.ListAllTransactions)
-	r.Get("/ledger", h.ListAllTransactions)
+	// User-specific Wallet Shortcuts
+	r.Post("/users/{id}/topup", h.AdminTopUp)
+	r.Post("/users/{id}/adjust", h.walletHandler.AdjustBalance)
+	r.Post("/users/{id}/refund", h.walletHandler.Refund)
 
-	// Balance Adjustment & Refund (Admin actions)
+	// Platform Wallets & Super Admin Ledger Operations
+	r.Get("/wallets", h.ListAllWallets)
+	r.Post("/topup", h.AdminTopUp)
+	r.Post("/wallets/topup", h.AdminTopUp)
 	r.Post("/adjust", h.walletHandler.AdjustBalance)
 	r.Post("/wallets/adjust", h.walletHandler.AdjustBalance)
 	r.Post("/refund", h.walletHandler.Refund)
 	r.Post("/wallets/refund", h.walletHandler.Refund)
+
+	// Platform-wide Ledger & Transactions (All users)
+	r.Get("/transactions", h.ListAllTransactions)
+	r.Get("/ledger", h.ListAllTransactions)
 
 	// Role Assignment via Supabase RPC
 	r.Post("/roles/assign", h.AssignRole)
@@ -474,5 +482,74 @@ func (h *Handler) ListBusinessTypes(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"count":  len(types),
 		"data":   types,
+	})
+}
+
+func (h *Handler) AdminTopUp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	adminUser := middleware.GetUserFromContext(r.Context())
+	if adminUser == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusUnauthorized,
+			"message": "Unauthorized: Super Admin login diperlukan",
+		})
+		return
+	}
+
+	var req AdminTopUpRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": "Body request tidak valid: JSON diperlukan",
+		})
+		return
+	}
+
+	// URL param fallback if endpoint is /users/{id}/topup
+	paramID := chi.URLParam(r, "id")
+	if paramID != "" && req.TargetUserID == "" {
+		req.TargetUserID = paramID
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	res, err := h.adminService.TopUpUser(adminUser, token, req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(res)
+}
+
+func (h *Handler) ListAllWallets(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	authHeader := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	users, err := h.adminService.ListUsers("", "", token)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"count":  len(users),
+		"data":   users,
 	})
 }

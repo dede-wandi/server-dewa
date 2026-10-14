@@ -1010,7 +1010,7 @@
                                 ],
                                 "body": {
                                     "mode": "raw",
-                                    "raw": "{\n  \"email\": \"agen_dewa@gmail.com\",\n  \"role\": \"agen\",\n  \"display_name\": \"Agen Dewa Cellular\"\n}"
+                                    "raw": "{\n  \"email\": \"user@gmail.com\",\n  \"role\": \"agen\",\n  \"full_name\": \"Ari\",\n  \"phone\": \"081234567890\",\n  \"address\": \"Jl. Raya Dewa No. 123\",\n  \"business_name\": \"Dewa Cellular Agen\",\n  \"business_phone\": \"081234567890\",\n  \"business_address\": \"Jl. Merdeka No. 45\",\n  \"wa_target_1\": \"081234567890\",\n  \"wa_target_2\": \"\",\n  \"wa_target_3\": \"\",\n  \"is_locked\": false\n}"
                                 },
                                 "url": {
                                     "raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}",
@@ -1125,6 +1125,200 @@
                     ]
                 },
                 {
+                    "name": "Wallets",
+                    "item": [
+                        {
+                            "name": "Get All Wallets",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/wallets",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "wallets"
+                                    ]
+                                },
+                                "description": "Melihat seluruh daftar dompet dan saldo pengguna real-time."
+                            }
+                        },
+                        {
+                            "name": "Top Up Balance",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"amount\": 100000,\n  \"channel\": \"Transfer Bank BCA\",\n  \"notes\": \"Top up saldo deposit kasir oleh Super Admin\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/wallets/topup",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "wallets",
+                                        "topup"
+                                    ]
+                                },
+                                "description": "Super Admin menambahkan saldo pengguna secara langsung dengan pencatatan audit trail."
+                            }
+                        },
+                        {
+                            "name": "Refund Balance",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"amount\": 50000,\n  \"transaction_code\": \"TRX-20261014-001\",\n  \"reason\": \"Transaksi pembelian pulsa gagal, pengembalian dana saldo\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/wallets/refund",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "wallets",
+                                        "refund"
+                                    ]
+                                },
+                                "description": "Super Admin mengembalikan dana saldo pengguna atas transaksi yang gagal atau dibatalkan."
+                            }
+                        },
+                        {
+                            "name": "Adjust Balance",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 50000,\n  \"reason\": \"Koreksi selisih saldo deposit kasir\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/wallets/adjust",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "wallets",
+                                        "adjust"
+                                    ]
+                                },
+                                "description": "Menambah (CREDIT) atau mengurangi (DEBIT) saldo uang pengguna dengan pencatatan audit trail alasan dan email admin."
+                            }
+                        },
+                        {
+                            "name": "Adjust Points",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 500,\n  \"reason\": \"Hadiah event member setia DewaCell\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/points/adjust",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "points",
+                                        "adjust"
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": "Ledger",
                     "item": [
                         {
@@ -1183,89 +1377,6 @@
                                         "admin",
                                         "points",
                                         "transactions"
-                                    ]
-                                }
-                            }
-                        }
-                    ]
-                },
-                {
-                    "name": "Adjustments",
-                    "item": [
-                        {
-                            "name": "Adjust Balance",
-                            "request": {
-                                "auth": {
-                                    "type": "bearer",
-                                    "bearer": [
-                                        {
-                                            "key": "token",
-                                            "value": "{{admin_token}}",
-                                            "type": "string"
-                                        }
-                                    ]
-                                },
-                                "method": "POST",
-                                "header": [
-                                    {
-                                        "key": "Content-Type",
-                                        "value": "application/json"
-                                    }
-                                ],
-                                "body": {
-                                    "mode": "raw",
-                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100000,\n  \"reason\": \"Koreksi deposit gagal / Hadiah loyalty promosi\"\n}"
-                                },
-                                "url": {
-                                    "raw": "{{base_url}}/api/v1/admin/adjust",
-                                    "host": [
-                                        "{{base_url}}"
-                                    ],
-                                    "path": [
-                                        "api",
-                                        "v1",
-                                        "admin",
-                                        "adjust"
-                                    ]
-                                },
-                                "description": "Menambah (CREDIT) atau mengurangi (DEBIT) saldo uang pengguna dengan pencatatan audit trail alasan dan email admin."
-                            }
-                        },
-                        {
-                            "name": "Adjust Points",
-                            "request": {
-                                "auth": {
-                                    "type": "bearer",
-                                    "bearer": [
-                                        {
-                                            "key": "token",
-                                            "value": "{{admin_token}}",
-                                            "type": "string"
-                                        }
-                                    ]
-                                },
-                                "method": "POST",
-                                "header": [
-                                    {
-                                        "key": "Content-Type",
-                                        "value": "application/json"
-                                    }
-                                ],
-                                "body": {
-                                    "mode": "raw",
-                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": 500,\n  \"reason\": \"Hadiah event member setia DewaCell\"\n}"
-                                },
-                                "url": {
-                                    "raw": "{{base_url}}/api/v1/admin/points/adjust",
-                                    "host": [
-                                        "{{base_url}}"
-                                    ],
-                                    "path": [
-                                        "api",
-                                        "v1",
-                                        "admin",
-                                        "points",
-                                        "adjust"
                                     ]
                                 }
                             }
