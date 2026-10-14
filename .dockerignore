@@ -1,0 +1,8 @@
+.git
+.github
+.gitignore
+.env
+Akses_server.md
+README.md
+tmp/
+bin/
