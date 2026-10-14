@@ -87,12 +87,7 @@ func New(cfg *config.Config) *chi.Mux {
 		api.Mount("/auth", authHandler.Routes())
 
 		// Public catalog browsing (fast cached responses)
-		api.Get("/products", productHandler.ListProducts)
-		api.Get("/products/categories", productHandler.ListCategories)
-		api.Get("/products/brands", productHandler.ListBrands)
-		api.Get("/products/{code}", productHandler.GetProductDetail)
-		api.Get("/products/ping", productHandler.Ping)
-		api.Get("/products/info", productHandler.Info)
+		api.Mount("/products", productHandler.Routes())
 
 		// DEDICATED SUPER ADMIN & ADMIN ENDPOINTS: Wajib login & role 'admin' / 'superadmin'
 		api.Route("/admin", func(adminRouter chi.Router) {
@@ -102,11 +97,10 @@ func New(cfg *config.Config) *chi.Mux {
 			adminRouter.Post("/products/sync", productHandler.SyncProducts)
 		})
 
-		// PROTECTED MICROSERVICES: Semua modul wajib melalui autentikasi login Supabase
+		// PROTECTED MICROSERVICES: Semua modul transaksi & dompet wajib melalui autentikasi login Supabase
 		api.Group(func(protected chi.Router) {
 			protected.Use(middleware.RequireAuth(sbClient))
 
-			protected.Mount("/products", productHandler.Routes())
 			protected.Mount("/transactions", transactionHandler.Routes())
 			protected.Mount("/wallet", walletHandler.Routes())
 		})
