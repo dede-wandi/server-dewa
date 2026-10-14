@@ -25,6 +25,11 @@
             "key": "target_user_id",
             "value": "",
             "type": "string"
+        },
+        {
+            "key": "banner_id",
+            "value": "9749cc26-1986-4238-86da-a05f38d3870f",
+            "type": "string"
         }
     ],
     "item": [
@@ -928,6 +933,51 @@
                             }
                         }
                     ]
+                },
+                {
+                    "name": "Banners",
+                    "item": [
+                        {
+                            "name": "Get Active Banners",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/banners",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "banners"
+                                    ]
+                                },
+                                "description": "Mengambil seluruh banner & promo aktif untuk carousel/slider di beranda aplikasi mobile."
+                            }
+                        },
+                        {
+                            "name": "Get Banner Detail",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/banners/{{banner_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "banners",
+                                        "{{banner_id}}"
+                                    ]
+                                },
+                                "description": "Mengambil rincian banner/promo spesifik berdasarkan ID."
+                            }
+                        }
+                    ],
+                    "description": "Endpoint banner promosi beranda dan slider promo untuk aplikasi mobile DewaCell."
                 }
             ]
         },
@@ -1732,6 +1782,198 @@
                             }
                         }
                     ]
+                },
+                {
+                    "name": "Banners",
+                    "item": [
+                        {
+                            "name": "Get All Banners (Admin)",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/banners",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "banners"
+                                    ]
+                                },
+                                "description": "Mengambil seluruh banner promo (aktif maupun non-aktif) untuk dashboard Super Admin."
+                            }
+                        },
+                        {
+                            "name": "Get Banner Detail (Admin)",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/banners/{{banner_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "banners",
+                                        "{{banner_id}}"
+                                    ]
+                                },
+                                "description": "Mengambil detail banner promo untuk diedit oleh admin."
+                            }
+                        },
+                        {
+                            "name": "Create Banner",
+                            "event": [
+                                {
+                                    "listen": "test",
+                                    "script": {
+                                        "exec": [
+                                            "var jsonData = pm.response.json();",
+                                            "if (jsonData && jsonData.data && jsonData.data.id) {",
+                                            "    pm.collectionVariables.set('banner_id', jsonData.data.id);",
+                                            "    console.log('✅ banner_id tersimpan:', jsonData.data.id);",
+                                            "}"
+                                        ],
+                                        "type": "text/javascript"
+                                    }
+                                }
+                            ],
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"title\": \"Flash Sale Gajian Hemat 50%!\",\n  \"subtitle\": \"Khusus pembelian pulsa dan token listrik malam ini\",\n  \"tag\": \"FLASH SALE\",\n  \"cta_text\": \"Serbu Promo 🔥\",\n  \"target_url\": \"/service/pulsa\",\n  \"action_type\": \"navigate\",\n  \"bg_color\": \"#DC2626\",\n  \"accent_color\": \"#B91C1C\",\n  \"icon\": \"flash\",\n  \"emoji\": \"⚡\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/banners",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "banners"
+                                    ]
+                                },
+                                "description": "Menambahkan banner promo baru ke beranda aplikasi mobile."
+                            }
+                        },
+                        {
+                            "name": "Update Banner",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"title\": \"Flash Sale Gajian Hemat 50% (DIPERPANJANG)\",\n  \"subtitle\": \"Promo diperpanjang sampai akhir pekan!\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/banners/{{banner_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "banners",
+                                        "{{banner_id}}"
+                                    ]
+                                },
+                                "description": "Memperbarui isi, status aktif/non-aktif, atau urutan banner promo."
+                            }
+                        },
+                        {
+                            "name": "Delete Banner",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "DELETE",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/banners/{{banner_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "banners",
+                                        "{{banner_id}}"
+                                    ]
+                                },
+                                "description": "Menghapus banner promo dari database dan beranda aplikasi."
+                            }
+                        }
+                    ],
+                    "description": "Pengelolaan penuh (CRUD) banner promosi oleh Admin & Superadmin."
                 }
             ]
         }
