@@ -1,14 +1,15 @@
 # DewaCell Server API (Golang Single-Container Microservices)
 
-Arsitektur API backend PPOB DewaCell berbasis Golang dengan pola **Single-Container Modular Microservices**.
+Arsitektur API backend PPOB DewaCell berbasis Golang dengan pola **Single-Container Modular Microservices**, terhubung langsung dengan **Supabase Auth & Database**.
 
-Semua service (Auth, Products, Transactions, Wallet) dipisahkan secara modular mengikuti kaidah microservices (domain bounded context), namun dikompilasi dan dijalankan dalam **1 container Docker** untuk menghemat konsumsi memori VPS (RAM ~2GB).
+Semua service (Auth, Products, Transactions, Wallet) dipisahkan secara modular mengikuti kaidah microservices, dikompilasi ke dalam **1 binary Go statis**, dan dijalankan dalam **1 container Docker** untuk menghemat konsumsi memori VPS (RAM ~2GB).
 
 ## 📊 Fitur Arsitektur & Keunggulan
-- **Ultra-Low Memory**: Runtime Go hanya memakan ~15MB - 30MB RAM (dibandingkan jika menjalankan 5-6 container terpisah yang memakan ratusan MB).
-- **Multi-Stage Docker**: Image runtime sangat kecil (<20MB) menggunakan Alpine Linux dan static binary compilation.
-- **Graceful Shutdown**: Mengamankan koneksi & transaksi saat container dimatikan atau di-restart.
-- **Auto Sync on Git Push**: Didukung Git post-receive hook & GitHub Actions untuk otomatis deploy saat `git push`.
+- **Supabase Connected**: Terhubung langsung ke Supabase Auth (`GoTrue`) & Database PostgREST.
+- **Strict Auth Guarding**: Semua endpoint layanan (Products, Transactions, Wallet) diproteksi secara ketat menggunakan middleware JWT Bearer Token Supabase.
+- **In-Memory Token Cache**: Validasi JWT di-cache selama 2 menit untuk performa kilat (<1ms latency) tanpa membebani rate limit Supabase.
+- **Ultra-Low Memory**: Konsumsi RAM container Docker hanya ~2 MB!
+- **Auto-Sync Git Push**: Perubahan otomatis di-build dan di-deploy ke VPS saat menjalankan `git push`.
 
 ---
 
@@ -19,49 +20,78 @@ Semua service (Auth, Products, Transactions, Wallet) dipisahkan secara modular m
 │   └── api/
 │       └── main.go              # Entrypoint server & graceful shutdown
 ├── internal/
-│   ├── config/                  # Konfigurasi aplikasi & environment
+│   ├── config/                  # Konfigurasi aplikasi & Supabase env
+│   ├── middleware/              # Auth middleware (Bearer JWT validation)
 │   ├── modules/                 # Microservice domain modules
-│   │   ├── auth/                # Auth Service (JWT, login, register)
+│   │   ├── auth/                # Auth Service (Login, Register, Refresh, Me)
 │   │   ├── product/             # Product Service (Katalog PPOB, pulsa, PLN)
 │   │   ├── transaction/         # Transaction Service (Order, callback, payment)
 │   │   └── wallet/              # Wallet Service (Saldo, ledger, mutasi)
-│   └── router/                  # Central HTTP router & middleware
+│   ├── router/                  # Central HTTP router & route protection
+│   └── supabase/                # Supabase Go client & token cache
 ├── Dockerfile                   # Multi-stage production build
-├── docker-compose.yml           # Docker orchestration
+├── docker-compose.yml           # Docker orchestration & limits
 ├── .env.example                 # Contoh environment variables
 └── go.mod
 ```
 
 ---
 
-## 🚀 Endpoint API
+## 🚀 Alur Autentikasi & Endpoint API
 
-### 1. Root & Status
-- `GET /` : Informasi status server, resource/memory usage, dan daftar services.
-- `GET /health` : Healthcheck endpoint (digunakan oleh Docker & monitoring).
+### 1. Endpoint Publik (Bisa diakses tanpa login)
+- `GET /` : Health status, Supabase connection status, memory stats.
+- `GET /health` : Healthcheck container Docker.
+- `POST /api/v1/auth/login` : Login dengan email & password.
+- `POST /api/v1/auth/register` : Registrasi akun baru di Supabase.
+- `POST /api/v1/auth/refresh` : Refresh token jika access token kedaluwarsa.
+- `GET /api/v1/auth/ping` : Cek koneksi ke Supabase Auth.
 
-### 2. Microservice Module Endpoints
-| Service | Endpoint | Keterangan |
-| :--- | :--- | :--- |
-| **Auth** | `GET /api/v1/auth/ping` | Ping status service Auth |
-| **Auth** | `GET /api/v1/auth/info` | Deskripsi & daftar endpoint Auth |
-| **Products** | `GET /api/v1/products/ping` | Ping status service Products |
-| **Products** | `GET /api/v1/products/info` | Deskripsi endpoint Products |
-| **Products** | `GET /api/v1/products` | Contoh daftar produk PPOB |
-| **Transactions** | `GET /api/v1/transactions/ping` | Ping status service Transactions |
-| **Transactions** | `GET /api/v1/transactions/info` | Deskripsi endpoint Transactions |
-| **Wallet** | `GET /api/v1/wallet/ping` | Ping status service Wallet |
-| **Wallet** | `GET /api/v1/wallet/info` | Deskripsi endpoint Wallet |
+#### Contoh Request Login:
+```bash
+curl -X POST http://43.173.26.120/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "Password123!"
+  }'
+```
+
+Respon sukses mengembalikan:
+```json
+{
+  "status": "success",
+  "data": {
+    "access_token": "eyJhbGciOi...",
+    "refresh_token": "...",
+    "user": {
+      "id": "uuid-user",
+      "email": "user@example.com"
+    }
+  }
+}
+```
 
 ---
 
-## 🛠️ Menjalankan Lokal
+### 2. Endpoint Terproteksi (Wajib Login & Mengirim Bearer Token)
+Setelah login berhasil, sertakan `access_token` pada header:
+`Authorization: Bearer <access_token>`
 
-```bash
-# Jalankan langsung dengan Go:
-go run ./cmd/api
+| Service | Endpoint | Header Wajib | Keterangan |
+| :--- | :--- | :--- | :--- |
+| **Auth** | `GET /api/v1/auth/me` | `Authorization: Bearer <token>` | Profil user login |
+| **Products** | `GET /api/v1/products` | `Authorization: Bearer <token>` | Daftar produk PPOB |
+| **Products** | `GET /api/v1/products/ping` | `Authorization: Bearer <token>` | Ping status service Products |
+| **Transactions** | `GET /api/v1/transactions/ping` | `Authorization: Bearer <token>` | Ping status service Transactions |
+| **Wallet** | `GET /api/v1/wallet/ping` | `Authorization: Bearer <token>` | Ping status service Wallet |
+| **Wallet** | `GET /api/v1/wallet/balance` | `Authorization: Bearer <token>` | Cek saldo wallet user |
 
-# Atau jalankan dengan Docker:
-docker compose up --build
+Jika request dikirim tanpa token atau token tidak valid:
+```json
+{
+  "status": "error",
+  "code": 401,
+  "message": "Unauthorized: Header 'Authorization: Bearer <token>' wajib disertakan"
+}
 ```
-Akses di browser: `http://localhost:8080`

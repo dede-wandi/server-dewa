@@ -7,13 +7,15 @@ import (
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/config"
+	"github.com/dede-wandi/server-dewa/internal/middleware"
 	"github.com/dede-wandi/server-dewa/internal/modules/auth"
 	"github.com/dede-wandi/server-dewa/internal/modules/product"
 	"github.com/dede-wandi/server-dewa/internal/modules/transaction"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
+	"github.com/dede-wandi/server-dewa/internal/supabase"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 )
 
@@ -22,18 +24,21 @@ var startTime = time.Now()
 func New(cfg *config.Config) *chi.Mux {
 	r := chi.NewRouter()
 
+	// Initialize Supabase Client
+	sbClient := supabase.NewClient(cfg.SupabaseURL, cfg.SupabaseAnonKey, cfg.SupabaseSecretKey)
+
 	// Global Middlewares
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(chiMiddleware.RequestID)
+	r.Use(chiMiddleware.RealIP)
+	r.Use(chiMiddleware.Logger)
+	r.Use(chiMiddleware.Recoverer)
+	r.Use(chiMiddleware.Timeout(30 * time.Second))
 
 	// CORS Configuration
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "apikey"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: false,
 		MaxAge:           300,
@@ -44,6 +49,11 @@ func New(cfg *config.Config) *chi.Mux {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
+		sbStatus := "connected"
+		if err := sbClient.Ping(); err != nil {
+			sbStatus = "error: " + err.Error()
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"message":     "Hello World! DewaCell API is running successfully in 1 Docker Container 🚀",
@@ -52,24 +62,42 @@ func New(cfg *config.Config) *chi.Mux {
 			"version":     cfg.AppVersion,
 			"uptime":      time.Since(startTime).String(),
 			"timestamp":   time.Now().Format(time.RFC3339),
+			"database": map[string]interface{}{
+				"provider": "Supabase",
+				"url":      cfg.SupabaseURL,
+				"status":   sbStatus,
+			},
 			"memory_usage": map[string]interface{}{
-				"alloc_mb":        float64(m.Alloc) / 1024 / 1024,
-				"total_alloc_mb":  float64(m.TotalAlloc) / 1024 / 1024,
-				"sys_mb":          float64(m.Sys) / 1024 / 1024,
-				"num_gc":          m.NumGC,
-				"goroutines":      runtime.NumGoroutine(),
+				"alloc_mb":       float64(m.Alloc) / 1024 / 1024,
+				"total_alloc_mb": float64(m.TotalAlloc) / 1024 / 1024,
+				"sys_mb":         float64(m.Sys) / 1024 / 1024,
+				"num_gc":         m.NumGC,
+				"goroutines":     runtime.NumGoroutine(),
 			},
 			"architecture": "Single-Container Modular Microservices",
-			"services": map[string]string{
-				"auth":        "/api/v1/auth/ping",
-				"products":    "/api/v1/products/ping",
-				"transaction": "/api/v1/transactions/ping",
-				"wallet":      "/api/v1/wallet/ping",
+			"auth_policy":  "All service endpoints (products, transactions, wallet) require Bearer JWT token from /api/v1/auth/login",
+			"endpoints": map[string]interface{}{
+				"public": []string{
+					"GET /",
+					"GET /health",
+					"POST /api/v1/auth/login",
+					"POST /api/v1/auth/register",
+					"POST /api/v1/auth/refresh",
+					"GET /api/v1/auth/ping",
+				},
+				"protected (requires login)": []string{
+					"GET /api/v1/auth/me",
+					"GET /api/v1/products",
+					"GET /api/v1/products/ping",
+					"GET /api/v1/transactions/ping",
+					"GET /api/v1/wallet/ping",
+					"GET /api/v1/wallet/balance",
+				},
 			},
 		})
 	})
 
-	// Healthcheck
+	// Healthcheck for Docker & monitoring
 	r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -79,17 +107,24 @@ func New(cfg *config.Config) *chi.Mux {
 		})
 	})
 
-	// Mount Microservices Modules
-	authHandler := auth.NewHandler()
+	// Initialize Handlers
+	authHandler := auth.NewHandler(sbClient)
 	productHandler := product.NewHandler()
 	transactionHandler := transaction.NewHandler()
 	walletHandler := wallet.NewHandler()
 
 	r.Route("/api/v1", func(api chi.Router) {
+		// Auth endpoints (public login/register/refresh, protected /me)
 		api.Mount("/auth", authHandler.Routes())
-		api.Mount("/products", productHandler.Routes())
-		api.Mount("/transactions", transactionHandler.Routes())
-		api.Mount("/wallet", walletHandler.Routes())
+
+		// PROTECTED MICROSERVICES: Semua modul wajib melalui autentikasi login Supabase
+		api.Group(func(protected chi.Router) {
+			protected.Use(middleware.RequireAuth(sbClient))
+
+			protected.Mount("/products", productHandler.Routes())
+			protected.Mount("/transactions", transactionHandler.Routes())
+			protected.Mount("/wallet", walletHandler.Routes())
+		})
 	})
 
 	return r
