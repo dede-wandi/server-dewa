@@ -1,12 +1,14 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/domain/role"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
+	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
 
 // Service defines the business logic interface for Super Admin operations
@@ -221,23 +223,159 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 }
 
 func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error) {
-	if s.walletHandler == nil {
-		return nil, fmt.Errorf("wallet handler not available")
+	cleanID := strings.TrimSpace(userID)
+	if cleanID == "" {
+		return nil, errors.New("User ID tidak boleh kosong")
 	}
 
-	wal, trxs, err := s.walletHandler.GetUserWallet(userID)
-	if err != nil {
-		return nil, err
+	var foundUser *UserListItem
+	var transactions interface{} = []interface{}{}
+
+	// 1. Try finding user from registered users & wallets RPC
+	if s.repo != nil {
+		if rawUsers, err := s.repo.FetchRegisteredUsersWallets(""); err == nil && len(rawUsers) > 0 {
+			for _, u := range rawUsers {
+				uID, _ := u["user_id"].(string)
+				if strings.EqualFold(uID, cleanID) {
+					userEmail, _ := u["user_email"].(string)
+					roleStr, _ := u["role"].(string)
+					def := role.GlobalRegistry.Resolve(roleStr, userEmail)
+
+					var balance float64
+					if b, ok := u["balance"].(float64); ok {
+						balance = b
+					}
+					var points int64
+					if p, ok := u["points"].(float64); ok {
+						points = int64(p)
+					}
+					var isLocked bool
+					if l, ok := u["is_locked"].(bool); ok {
+						isLocked = l
+					}
+					createdAt, _ := u["created_at"].(string)
+					updatedAt, _ := u["updated_at"].(string)
+
+					foundUser = &UserListItem{
+						UserID:    uID,
+						UserEmail: userEmail,
+						Role:      string(def.Role),
+						RoleName:  def.Name,
+						Category:  string(def.Category),
+						Balance:   balance,
+						Points:    points,
+						IsLocked:  isLocked,
+						CreatedAt: createdAt,
+						UpdatedAt: updatedAt,
+					}
+					break
+				}
+			}
+		}
+
+		// 2. Fallback to Supabase Auth Admin API direct lookup or list
+		if foundUser == nil {
+			var u *supabase.User
+			if directUser, err := s.repo.FetchAuthAdminUser(cleanID); err == nil && directUser != nil {
+				u = directUser
+			} else if authUsers, err := s.repo.FetchAuthAdminUsers(1, 100); err == nil && len(authUsers) > 0 {
+				for _, au := range authUsers {
+					if strings.EqualFold(au.ID, cleanID) {
+						auCopy := au
+						u = &auCopy
+						break
+					}
+				}
+			}
+
+			if u != nil {
+				userRoles := u.GetRoles()
+				primaryRole := "user"
+				if len(userRoles) > 0 {
+					primaryRole = userRoles[0]
+				}
+				def := role.GlobalRegistry.Resolve(primaryRole, u.Email)
+
+				var balance float64
+				var points int64
+				var isLocked bool
+				var updatedAt string
+
+				if s.walletHandler != nil {
+					wal, _ := s.walletHandler.GetWalletService().GetBalance(u.ID, u.Email, "")
+					if wal != nil {
+						balance = wal.Balance
+						points = wal.Points
+						isLocked = wal.IsLocked
+						updatedAt = wal.UpdatedAt.Format(time.RFC3339)
+					} else {
+						updatedAt = u.CreatedAt
+					}
+				} else {
+					updatedAt = u.CreatedAt
+				}
+
+				foundUser = &UserListItem{
+					UserID:    u.ID,
+					UserEmail: u.Email,
+					Role:      string(def.Role),
+					RoleName:  def.Name,
+					Category:  string(def.Category),
+					Balance:   balance,
+					Points:    points,
+					IsLocked:  isLocked,
+					CreatedAt: u.CreatedAt,
+					UpdatedAt: updatedAt,
+				}
+			}
+		}
+	}
+
+	// 3. Fallback to runtime wallet
+	if foundUser == nil && s.walletHandler != nil {
+		wal, trxs, err := s.walletHandler.GetUserWallet(cleanID)
+		if err == nil && wal != nil {
+			def := role.GlobalRegistry.Resolve(wal.Role, wal.UserEmail)
+			foundUser = &UserListItem{
+				UserID:    wal.UserID,
+				UserEmail: wal.UserEmail,
+				Role:      string(def.Role),
+				RoleName:  def.Name,
+				Category:  string(def.Category),
+				Balance:   wal.Balance,
+				Points:    wal.Points,
+				IsLocked:  wal.IsLocked,
+				CreatedAt: wal.UpdatedAt.Format(time.RFC3339),
+				UpdatedAt: wal.UpdatedAt.Format(time.RFC3339),
+			}
+			transactions = trxs
+		}
+	}
+
+	if foundUser == nil {
+		return nil, errors.New("Pengguna tidak ditemukan")
+	}
+
+	// Fetch transaction history if not fetched yet
+	if s.walletHandler != nil {
+		history := s.walletHandler.GetWalletService().GetHistory(cleanID)
+		if len(history) > 0 {
+			transactions = history
+		}
 	}
 
 	return &UserDetailResponse{
-		UserID:       wal.UserID,
-		UserEmail:    wal.UserEmail,
-		Balance:      wal.Balance,
-		Points:       wal.Points,
-		IsLocked:     wal.IsLocked,
-		UpdatedAt:    wal.UpdatedAt.Format(time.RFC3339),
-		Transactions: trxs,
+		UserID:       foundUser.UserID,
+		UserEmail:    foundUser.UserEmail,
+		Role:         foundUser.Role,
+		RoleName:     foundUser.RoleName,
+		Category:     foundUser.Category,
+		Balance:      foundUser.Balance,
+		Points:       foundUser.Points,
+		IsLocked:     foundUser.IsLocked,
+		CreatedAt:    foundUser.CreatedAt,
+		UpdatedAt:    foundUser.UpdatedAt,
+		Transactions: transactions,
 	}, nil
 }
 

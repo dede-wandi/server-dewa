@@ -245,6 +245,52 @@ func (c *Client) SignIn(email, password string) (*AuthResponse, error) {
 	return &authResp, nil
 }
 
+// IsEmailRegistered checks if an email is already registered in Supabase
+func (c *Client) IsEmailRegistered(email string) bool {
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	if cleanEmail == "" {
+		return false
+	}
+
+	// 1. Try fast dedicated RPC check_user_email_exists
+	rpcPayload := map[string]interface{}{
+		"p_email": cleanEmail,
+	}
+	if respBytes, err := c.CallRPC("check_user_email_exists", rpcPayload, ""); err == nil {
+		var exists bool
+		if err := json.Unmarshal(respBytes, &exists); err == nil {
+			return exists
+		}
+	}
+
+	// 2. Query registered users via get_all_registered_users_wallets
+	if respBytes, err := c.CallRPC("get_all_registered_users_wallets", nil, ""); err == nil && len(respBytes) > 0 {
+		var users []struct {
+			UserEmail string `json:"user_email"`
+		}
+		if err := json.Unmarshal(respBytes, &users); err == nil {
+			for _, u := range users {
+				if strings.EqualFold(u.UserEmail, cleanEmail) {
+					return true
+				}
+			}
+		}
+	}
+
+	// 3. Fallback to Supabase Auth admin API if secretKey is available
+	if c.secretKey != "" {
+		if authUsers, err := c.AdminListUsers(1, 100); err == nil && len(authUsers) > 0 {
+			for _, u := range authUsers {
+				if strings.EqualFold(u.Email, cleanEmail) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
 // SignUp registers a new user with Supabase Auth
 func (c *Client) SignUp(email, password string, data map[string]interface{}) (*AuthResponse, error) {
 	payload := map[string]interface{}{
@@ -489,6 +535,44 @@ func (c *Client) AdminListUsers(page, perPage int) ([]User, error) {
 	}
 
 	return res.Users, nil
+}
+
+// AdminGetUser fetches a single user by ID from Supabase Auth admin API
+func (c *Client) AdminGetUser(userID string) (*User, error) {
+	if c.secretKey == "" {
+		return nil, errors.New("supabase service role secret key is required for admin user operations")
+	}
+
+	reqURL := fmt.Sprintf("%s/auth/v1/admin/users/%s", c.url, userID)
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	req.Header.Set("Authorization", "Bearer "+c.secretKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error fetching admin user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch admin user failed (%d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	var user User
+	if err := json.Unmarshal(respBytes, &user); err != nil {
+		return nil, fmt.Errorf("failed to decode admin user: %w", err)
+	}
+
+	return &user, nil
 }
 
 // HasSecretKey returns true if the Supabase service role secret key is present

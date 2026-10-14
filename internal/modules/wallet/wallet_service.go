@@ -515,9 +515,16 @@ func (s *walletService) GetAllWallets() []*Wallet {
 func (s *walletService) GetUserWallet(userID string) (*Wallet, []*WalletTransaction, error) {
 	wal, ok := s.repo.GetWallet(userID)
 	if !ok {
-		return nil, nil, errors.New("Dompet pengguna tidak ditemukan")
+		var err error
+		wal, err = s.GetBalance(userID, "", "")
+		if err != nil || wal == nil {
+			return nil, nil, errors.New("Dompet pengguna tidak ditemukan")
+		}
 	}
-	trxs := s.repo.GetTransactionsByUser(userID)
+	trxs := s.GetHistory(userID)
+	if trxs == nil {
+		trxs = []*WalletTransaction{}
+	}
 	return wal, trxs, nil
 }
 

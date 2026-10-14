@@ -11,6 +11,7 @@ import (
 type Repository interface {
 	FetchRegisteredUsersWallets(token string) ([]map[string]interface{}, error)
 	FetchAuthAdminUsers(page, perPage int) ([]supabase.User, error)
+	FetchAuthAdminUser(userID string) (*supabase.User, error)
 	ResetPassword(userID, newPassword, token string) error
 	UpdateEmail(userID, newEmail, token string) error
 	UpdateUser(userID string, req UpdateUserRequest, token string) error
@@ -54,6 +55,13 @@ func (r *supabaseRepository) FetchAuthAdminUsers(page, perPage int) ([]supabase.
 		return nil, fmt.Errorf("supabase client not available")
 	}
 	return r.sbClient.AdminListUsers(page, perPage)
+}
+
+func (r *supabaseRepository) FetchAuthAdminUser(userID string) (*supabase.User, error) {
+	if r.sbClient == nil {
+		return nil, fmt.Errorf("supabase client not available")
+	}
+	return r.sbClient.AdminGetUser(userID)
 }
 
 func (r *supabaseRepository) ResetPassword(userID, newPassword, token string) error {

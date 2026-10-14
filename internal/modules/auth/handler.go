@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/middleware"
@@ -118,23 +119,43 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" {
+	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
+	if cleanEmail == "" || !strings.Contains(cleanEmail, "@") {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "error",
 			"code":    http.StatusBadRequest,
-			"message": "Email dan password wajib diisi",
+			"message": "Format alamat email tidak valid",
 		})
 		return
 	}
 
-	authResp, err := h.sb.SignIn(req.Email, req.Password)
+	if req.Password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": "Password wajib diisi",
+		})
+		return
+	}
+
+	authResp, err := h.sb.SignIn(cleanEmail, req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
+
+		// Evaluasi penyebab kegagalan: email belum terdaftar vs password keliru
+		errMsg := "Email atau password yang Anda masukkan salah"
+		if !h.sb.IsEmailRegistered(cleanEmail) {
+			errMsg = "Email tidak terdaftar di sistem. Silakan periksa kembali email Anda atau lakukan pendaftaran."
+		} else {
+			errMsg = "Password yang Anda masukkan salah. Silakan coba lagi."
+		}
+
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "error",
 			"code":    http.StatusUnauthorized,
-			"message": err.Error(),
+			"message": errMsg,
 		})
 		return
 	}
@@ -161,17 +182,38 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" {
+	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
+	if cleanEmail == "" || !strings.Contains(cleanEmail, "@") {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "error",
 			"code":    http.StatusBadRequest,
-			"message": "Email dan password wajib diisi",
+			"message": "Format alamat email tidak valid",
 		})
 		return
 	}
 
-	authResp, err := h.sb.SignUp(req.Email, req.Password, req.Data)
+	if len(req.Password) < 6 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": "Password minimal harus 6 karakter",
+		})
+		return
+	}
+
+	if h.sb.IsEmailRegistered(cleanEmail) {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusConflict,
+			"message": "Alamat email sudah terdaftar di sistem. Silakan masuk dengan email ini atau gunakan email lain.",
+		})
+		return
+	}
+
+	authResp, err := h.sb.SignUp(cleanEmail, req.Password, req.Data)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{

@@ -18,9 +18,13 @@ type UserListItem struct {
 type UserDetailResponse struct {
 	UserID       string      `json:"user_id"`
 	UserEmail    string      `json:"user_email"`
+	Role         string      `json:"role"`
+	RoleName     string      `json:"role_name"`
+	Category     string      `json:"category"`
 	Balance      float64     `json:"balance"`
 	Points       int64       `json:"points"`
 	IsLocked     bool        `json:"is_locked"`
+	CreatedAt    string      `json:"created_at"`
 	UpdatedAt    string      `json:"updated_at"`
 	Transactions interface{} `json:"transactions"`
 }
