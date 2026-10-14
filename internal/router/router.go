@@ -3,7 +3,6 @@ package router
 import (
 	"encoding/json"
 	"net/http"
-	"runtime"
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/config"
@@ -56,56 +55,12 @@ func New(cfg *config.Config) *chi.Mux {
 		})
 	})
 
-	// Root Route - Hello World & System Status
+	// Root Route - Clean, secure status
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-
-		sbStatus := "connected"
-		if err := sbClient.Ping(); err != nil {
-			sbStatus = "error: " + err.Error()
-		}
-
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"message":     "Hello World! DewaCell API is running successfully in 1 Docker Container 🚀",
-			"service":     cfg.ServiceName,
-			"environment": cfg.Environment,
-			"version":     cfg.AppVersion,
-			"uptime":      time.Since(startTime).String(),
-			"timestamp":   time.Now().Format(time.RFC3339),
-			"database": map[string]interface{}{
-				"provider": "Supabase",
-				"url":      cfg.SupabaseURL,
-				"status":   sbStatus,
-			},
-			"memory_usage": map[string]interface{}{
-				"alloc_mb":       float64(m.Alloc) / 1024 / 1024,
-				"total_alloc_mb": float64(m.TotalAlloc) / 1024 / 1024,
-				"sys_mb":         float64(m.Sys) / 1024 / 1024,
-				"num_gc":         m.NumGC,
-				"goroutines":     runtime.NumGoroutine(),
-			},
-			"architecture": "Single-Container Modular Microservices",
-			"auth_policy":  "All service endpoints (products, transactions, wallet) require Bearer JWT token from /api/v1/auth/login",
-			"endpoints": map[string]interface{}{
-				"public": []string{
-					"GET /",
-					"GET /health",
-					"POST /api/v1/auth/login",
-					"POST /api/v1/auth/register",
-					"POST /api/v1/auth/refresh",
-					"GET /api/v1/auth/ping",
-				},
-				"protected (requires login)": []string{
-					"GET /api/v1/auth/me",
-					"GET /api/v1/products",
-					"GET /api/v1/products/ping",
-					"GET /api/v1/transactions/ping",
-					"GET /api/v1/wallet/ping",
-					"GET /api/v1/wallet/balance",
-				},
-			},
+			"status":  "success",
+			"message": "Hello World! server OK",
 		})
 	})
 
