@@ -806,3 +806,97 @@ func (c *Client) PostDB(table string, payload interface{}, preferHeader, authTok
 	return respBytes, nil
 }
 
+// PatchDB updates records in a Supabase table via PostgREST
+func (c *Client) PatchDB(table, queryParams string, payload interface{}, authToken string) ([]byte, error) {
+	var bodyReader io.Reader
+	if payload != nil {
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewBuffer(bodyBytes)
+	}
+
+	reqURL := fmt.Sprintf("%s/rest/v1/%s", c.url, table)
+	if queryParams != "" {
+		if !strings.HasPrefix(queryParams, "?") {
+			reqURL += "?" + queryParams
+		} else {
+			reqURL += queryParams
+		}
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, reqURL, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else if c.secretKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.secretKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.anonKey)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Prefer", "return=representation")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error updating table %s: %w", table, err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("update table %s failed (%d): %s", table, resp.StatusCode, string(respBytes))
+	}
+
+	return respBytes, nil
+}
+
+// DeleteDB deletes records from a Supabase table via PostgREST
+func (c *Client) DeleteDB(table, queryParams string, authToken string) error {
+	reqURL := fmt.Sprintf("%s/rest/v1/%s", c.url, table)
+	if queryParams != "" {
+		if !strings.HasPrefix(queryParams, "?") {
+			reqURL += "?" + queryParams
+		} else {
+			reqURL += queryParams
+		}
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else if c.secretKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.secretKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.anonKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("network error deleting from table %s: %w", table, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete from table %s failed (%d): %s", table, resp.StatusCode, string(respBytes))
+	}
+
+	return nil
+}
+
+
