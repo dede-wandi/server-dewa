@@ -60,6 +60,11 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/roles/assign", h.AssignRole)
 	r.Post("/roles/remove", h.RemoveRole)
 
+	// Points Ledger & Adjustment (Admin)
+	r.Get("/points/transactions", h.ListAllPointTransactions)
+	r.Get("/points/ledger", h.ListAllPointTransactions)
+	r.Post("/points/adjust", h.AdjustUserPoints)
+
 	return r
 }
 
@@ -310,5 +315,66 @@ func (h *Handler) RemoveRole(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
 		"message": fmt.Sprintf("Role '%s' untuk %s dihapus dari sistem (RPC fallback)", req.Role, req.Email),
+	})
+}
+
+// ListAllPointTransactions returns all point transactions across all users
+func (h *Handler) ListAllPointTransactions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	allPts := h.walletHandler.GetAllPointTransactions()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"count":  len(allPts),
+		"data":   allPts,
+	})
+}
+
+type AdjustPointsRequest struct {
+	TargetUserID string `json:"target_user_id"`
+	Type         string `json:"type"`   // CREDIT or DEBIT
+	Amount       int64  `json:"amount"` // Jumlah poin
+	Reason       string `json:"reason"` // Alasan
+}
+
+// AdjustUserPoints allows Super Admin to adjust user points with an audit trail
+func (h *Handler) AdjustUserPoints(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	adminUser := middleware.GetUserFromContext(r.Context())
+	if adminUser == nil || !adminUser.HasAnyRole("admin", "superadmin") {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    403,
+			"message": "Akses ditolak. Fitur penyesuaian poin hanya dapat dilakukan oleh Super Admin.",
+		})
+		return
+	}
+
+	var req AdjustPointsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"status":"error","message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.TargetUserID == "" || req.Amount <= 0 || strings.TrimSpace(req.Reason) == "" {
+		http.Error(w, `{"status":"error","message":"target_user_id, amount > 0, dan reason wajib diisi"}`, http.StatusBadRequest)
+		return
+	}
+
+	ptTrx, err := h.walletHandler.AdjustPoints(req.TargetUserID, req.Type, req.Amount, req.Reason, adminUser.Email)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":      "success",
+		"message":     fmt.Sprintf("Penyesuaian %d Poin untuk user %s berhasil diproses", req.Amount, req.TargetUserID),
+		"admin_by":    adminUser.Email,
+		"transaction": ptTrx,
 	})
 }

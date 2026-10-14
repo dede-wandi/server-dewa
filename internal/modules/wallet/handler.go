@@ -58,18 +58,36 @@ type WalletTransaction struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
+type PointTransaction struct {
+	ID              string    `json:"id"`
+	TransactionCode string    `json:"transaction_code"`
+	UserID          string    `json:"user_id"`
+	Type            string    `json:"type"`     // CREDIT (Poin Masuk) or DEBIT (Poin Keluar/Belanja)
+	Category        string    `json:"category"` // REWARD, CASHBACK, REDEEM, ADJUSTMENT
+	Amount          int64     `json:"amount"`
+	PointsBefore    int64     `json:"points_before"`
+	PointsAfter     int64     `json:"points_after"`
+	Title           string    `json:"title"`       // e.g. "Cashback Belanja Pulsa", "Diskon Belanja Pakai Poin"
+	Description     string    `json:"description"` // Keterangan transaksi poin
+	ReferenceID     string    `json:"reference_id,omitempty"`
+	Status          string    `json:"status"` // SUCCESS
+	CreatedAt       time.Time `json:"created_at"`
+}
+
 type Handler struct {
-	sbClient     *supabase.Client
-	mu           sync.RWMutex
-	wallets      map[string]*Wallet
-	transactions map[string][]*WalletTransaction
+	sbClient          *supabase.Client
+	mu                sync.RWMutex
+	wallets           map[string]*Wallet
+	transactions      map[string][]*WalletTransaction
+	pointTransactions map[string][]*PointTransaction
 }
 
 func NewHandler(sbClient *supabase.Client) *Handler {
 	h := &Handler{
-		sbClient:     sbClient,
-		wallets:      make(map[string]*Wallet),
-		transactions: make(map[string][]*WalletTransaction),
+		sbClient:          sbClient,
+		wallets:           make(map[string]*Wallet),
+		transactions:      make(map[string][]*WalletTransaction),
+		pointTransactions: make(map[string][]*PointTransaction),
 	}
 
 	// Pre-seed sample wallet for existing user (user@gmail.com)
@@ -131,6 +149,68 @@ func NewHandler(sbClient *supabase.Client) *Handler {
 		},
 	}
 
+	h.pointTransactions[defaultUserID] = []*PointTransaction{
+		{
+			ID:              "pt-01",
+			TransactionCode: "PTS-20261014-998101",
+			UserID:          defaultUserID,
+			Type:            TypeCredit,
+			Category:        "CASHBACK",
+			Amount:          750,
+			PointsBefore:    11750,
+			PointsAfter:     12500,
+			Title:           "Reward Poin Cashback Paket Data",
+			Description:     "Cashback 1% dari pembayaran paket data Telkomsel 50GB",
+			ReferenceID:     "TRX-20261014-998101",
+			Status:          "SUCCESS",
+			CreatedAt:       time.Now().Add(-2 * time.Hour),
+		},
+		{
+			ID:              "pt-02",
+			TransactionCode: "PTS-20261014-482199",
+			UserID:          defaultUserID,
+			Type:            TypeCredit,
+			Category:        "CASHBACK",
+			Amount:          2015,
+			PointsBefore:    9735,
+			PointsAfter:     11750,
+			Title:           "Reward Poin Cashback Token PLN",
+			Description:     "Cashback 1% dari pembelian token listrik PLN Rp 200.000",
+			ReferenceID:     "TRX-20261014-482199",
+			Status:          "SUCCESS",
+			CreatedAt:       time.Now().Add(-24 * time.Hour),
+		},
+		{
+			ID:              "pt-03",
+			TransactionCode: "PTS-20261013-112233",
+			UserID:          defaultUserID,
+			Type:            TypeDebit,
+			Category:        "REDEEM",
+			Amount:          5000,
+			PointsBefore:    14735,
+			PointsAfter:     9735,
+			Title:           "Diskon Belanja Pakai DewaPoin",
+			Description:     "Penukaran 5.000 Poin untuk potongan harga belanja sayur di DewaMart",
+			ReferenceID:     "TRX-20261014-112233",
+			Status:          "SUCCESS",
+			CreatedAt:       time.Now().Add(-30 * time.Hour),
+		},
+		{
+			ID:              "pt-04",
+			TransactionCode: "PTS-20261001-000001",
+			UserID:          defaultUserID,
+			Type:            TypeCredit,
+			Category:        "REWARD",
+			Amount:          10000,
+			PointsBefore:    0,
+			PointsAfter:     10000,
+			Title:           "Bonus Reward Pembukaan Akun",
+			Description:     "Selamat datang di DewaCell! Bonus 10.000 DewaPoin untuk akun baru",
+			Status:          "SUCCESS",
+			CreatedAt:       time.Now().Add(-14 * 24 * time.Hour),
+		},
+	}
+
 	return h
 }
 
@@ -148,6 +228,11 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/pay", h.Pay)
 	r.Post("/topup", h.TopUp)
 	r.Post("/refund", h.Refund)
+
+	// Points endpoints (requires login token)
+	r.Get("/points", h.GetPointHistory)
+	r.Get("/points/history", h.GetPointHistory)
+	r.Post("/points/redeem", h.RedeemPoints)
 
 	// Admin-only endpoints (requires admin or superadmin role)
 	r.Group(func(admin chi.Router) {
@@ -410,7 +495,9 @@ func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 	balanceBefore := wallet.Balance
 	wallet.Balance -= req.Amount
 	balanceAfter := wallet.Balance
-	wallet.Points += int64(req.Amount * 0.01) // 1% points reward
+	ptsBefore := wallet.Points
+	earnedPts := int64(req.Amount * 0.01) // 1% points reward
+	wallet.Points += earnedPts
 	wallet.UpdatedAt = time.Now()
 
 	trxCode := fmt.Sprintf("TRX-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
@@ -431,6 +518,26 @@ func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.transactions[user.ID] = append([]*WalletTransaction{trx}, h.transactions[user.ID]...)
+
+	// Catat riwayat mutasi poin reward
+	if earnedPts > 0 {
+		ptTrx := &PointTransaction{
+			ID:              fmt.Sprintf("pt-%d", time.Now().UnixNano()),
+			TransactionCode: fmt.Sprintf("PTS-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000),
+			UserID:          user.ID,
+			Type:            TypeCredit,
+			Category:        "CASHBACK",
+			Amount:          earnedPts,
+			PointsBefore:    ptsBefore,
+			PointsAfter:     wallet.Points,
+			Title:           fmt.Sprintf("Reward 1%% Poin: %s", req.Title),
+			Description:     fmt.Sprintf("Cashback reward poin dari transaksi %s", trxCode),
+			ReferenceID:     trxCode,
+			Status:          "SUCCESS",
+			CreatedAt:       time.Now(),
+		}
+		h.pointTransactions[user.ID] = append([]*PointTransaction{ptTrx}, h.pointTransactions[user.ID]...)
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":      "success",
@@ -1048,4 +1155,187 @@ func formatRupiah(n int64) string {
 	}
 	return string(res)
 }
+
+func (h *Handler) GetPointHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	h.mu.RLock()
+	pts, exists := h.pointTransactions[user.ID]
+	if !exists {
+		pts = []*PointTransaction{}
+	}
+	var ptsBalance int64 = 0
+	if wal, ok := h.wallets[user.ID]; ok {
+		ptsBalance = wal.Points
+	}
+	res := make([]*PointTransaction, len(pts))
+	copy(res, pts)
+	h.mu.RUnlock()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "success",
+		"points_balance":  ptsBalance,
+		"formatted_coins": fmt.Sprintf("%d Poin", ptsBalance),
+		"point_value_idr": ptsBalance, // 1 Poin bernilai Rp 1,-
+		"count":           len(res),
+		"data":            res,
+	})
+}
+
+type RedeemPointsRequest struct {
+	Points      int64  `json:"points"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+func (h *Handler) RedeemPoints(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req RedeemPointsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"status":"error","message":"Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Points <= 0 {
+		http.Error(w, `{"status":"error","message":"Jumlah poin yang ditukarkan harus lebih dari 0"}`, http.StatusBadRequest)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	wallet := h.getOrCreateWalletLocked(user.ID, user.Email)
+	if wallet.Points < req.Points {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":          "error",
+			"code":            "INSUFFICIENT_POINTS",
+			"message":         fmt.Sprintf("Poin tidak mencukupi. Poin Anda: %d, dibutuhkan: %d Poin", wallet.Points, req.Points),
+			"current_points":  wallet.Points,
+			"required_points": req.Points,
+		})
+		return
+	}
+
+	ptsBefore := wallet.Points
+	wallet.Points -= req.Points
+	ptsAfter := wallet.Points
+	wallet.UpdatedAt = time.Now()
+
+	title := "Penukaran Poin untuk Diskon Belanja"
+	if req.Title != "" {
+		title = req.Title
+	}
+	desc := fmt.Sprintf("Penukaran %d DewaPoin senilai Rp %s untuk potongan harga", req.Points, formatRupiah(req.Points))
+	if req.Description != "" {
+		desc = req.Description
+	}
+
+	ptCode := fmt.Sprintf("PTS-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	ptTrx := &PointTransaction{
+		ID:              fmt.Sprintf("pt-%d", time.Now().UnixNano()),
+		TransactionCode: ptCode,
+		UserID:          user.ID,
+		Type:            TypeDebit,
+		Category:        "REDEEM",
+		Amount:          req.Points,
+		PointsBefore:    ptsBefore,
+		PointsAfter:     ptsAfter,
+		Title:           title,
+		Description:     desc,
+		Status:          "SUCCESS",
+		CreatedAt:       time.Now(),
+	}
+
+	h.pointTransactions[user.ID] = append([]*PointTransaction{ptTrx}, h.pointTransactions[user.ID]...)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "success",
+		"message":         fmt.Sprintf("%d Poin berhasil ditukarkan untuk belanja!", req.Points),
+		"points_redeemed": req.Points,
+		"points_balance":  ptsAfter,
+		"transaction":     ptTrx,
+	})
+}
+
+func (h *Handler) GetAllPointTransactions() []*PointTransaction {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	var allTrxs []*PointTransaction
+	for _, trxs := range h.pointTransactions {
+		allTrxs = append(allTrxs, trxs...)
+	}
+
+	// Sort descending by CreatedAt
+	for i := 0; i < len(allTrxs)-1; i++ {
+		for j := i + 1; j < len(allTrxs); j++ {
+			if allTrxs[i].CreatedAt.Before(allTrxs[j].CreatedAt) {
+				allTrxs[i], allTrxs[j] = allTrxs[j], allTrxs[i]
+			}
+		}
+	}
+
+	return allTrxs
+}
+
+func (h *Handler) AdjustPoints(userID string, pType string, amount int64, reason string, adminEmail string) (*PointTransaction, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	wal, exists := h.wallets[userID]
+	if !exists {
+		return nil, fmt.Errorf("user ID %s not found", userID)
+	}
+
+	ptsBefore := wal.Points
+	var ptsAfter int64
+	var title string
+
+	pType = strings.ToUpper(strings.TrimSpace(pType))
+	if pType == TypeCredit {
+		ptsAfter = ptsBefore + amount
+		title = fmt.Sprintf("Penyesuaian Tambah Poin oleh Super Admin (%s)", adminEmail)
+	} else {
+		if ptsBefore < amount {
+			return nil, fmt.Errorf("poin user (%d) tidak mencukupi untuk pemotongan %d poin", ptsBefore, amount)
+		}
+		ptsAfter = ptsBefore - amount
+		title = fmt.Sprintf("Koreksi Pemotongan Poin oleh Super Admin (%s)", adminEmail)
+	}
+
+	wal.Points = ptsAfter
+	wal.UpdatedAt = time.Now()
+
+	ptCode := fmt.Sprintf("PTS-ADJ-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	ptTrx := &PointTransaction{
+		ID:              fmt.Sprintf("pt-adj-%d", time.Now().UnixNano()),
+		TransactionCode: ptCode,
+		UserID:          userID,
+		Type:            pType,
+		Category:        "ADJUSTMENT",
+		Amount:          amount,
+		PointsBefore:    ptsBefore,
+		PointsAfter:     ptsAfter,
+		Title:           title,
+		Description:     reason,
+		Status:          "SUCCESS",
+		CreatedAt:       time.Now(),
+	}
+
+	h.pointTransactions[userID] = append([]*PointTransaction{ptTrx}, h.pointTransactions[userID]...)
+	return ptTrx, nil
+}
+
 
