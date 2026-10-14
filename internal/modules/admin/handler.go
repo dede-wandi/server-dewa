@@ -151,7 +151,50 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Fallback to active runtime wallets (Clean OOP role resolution)
+	// 2. Query all registered users directly from Supabase Auth Admin API (100% real database users)
+	if h.sbClient != nil {
+		if authUsers, err := h.sbClient.AdminListUsers(1, 100); err == nil && len(authUsers) > 0 {
+			list := make([]map[string]interface{}, 0, len(authUsers))
+			for _, u := range authUsers {
+				userRoles := u.GetRoles()
+				primaryRole := "user"
+				if len(userRoles) > 0 {
+					primaryRole = userRoles[0]
+				}
+				wal, _ := h.walletHandler.GetWalletService().GetBalance(u.ID, u.Email, "")
+				var balance float64
+				var points int64
+				var isLocked bool
+				if wal != nil {
+					balance = wal.Balance
+					points = wal.Points
+					isLocked = wal.IsLocked
+				}
+				def := role.GlobalRegistry.Resolve(primaryRole, u.Email)
+				list = append(list, map[string]interface{}{
+					"user_id":     u.ID,
+					"user_email":  u.Email,
+					"role":        string(def.Role),
+					"role_name":   def.Name,
+					"badge_color": def.BadgeColor,
+					"category":    string(def.Category),
+					"balance":     balance,
+					"formatted":   fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(balance))),
+					"points":      points,
+					"is_locked":   isLocked,
+					"created_at":  u.CreatedAt,
+				})
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "success",
+				"count":  len(list),
+				"data":   list,
+			})
+			return
+		}
+	}
+
+	// 3. Fallback to active runtime wallets (Clean OOP role resolution)
 	wallets := h.walletHandler.GetAllWallets()
 	userList := make([]map[string]interface{}, 0, len(wallets))
 

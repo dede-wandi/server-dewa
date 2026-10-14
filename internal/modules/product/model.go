@@ -26,5 +26,7 @@ type Product struct {
 	PointsReward  int64           `json:"points_reward"`  // Cashback DewaPoin otomatis
 	Status        string          `json:"status"`         // ACTIVE, GANGGUAN, EMPTY
 	Description   string          `json:"description"`
+	Stock         int             `json:"stock,omitempty"`
+	ImageURL      string          `json:"image_url,omitempty"`
 	UpdatedAt     time.Time       `json:"updated_at"`
 }

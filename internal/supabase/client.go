@@ -443,3 +443,144 @@ func (c *Client) CallRPC(fnName string, payload interface{}, authToken string) (
 
 	return respBytes, nil
 }
+
+// AdminListUsers fetches registered users from Supabase Auth admin API (requires secretKey)
+func (c *Client) AdminListUsers(page, perPage int) ([]User, error) {
+	if c.secretKey == "" {
+		return nil, errors.New("supabase service role secret key is required for admin user operations")
+	}
+
+	if perPage <= 0 {
+		perPage = 50
+	}
+	if page <= 0 {
+		page = 1
+	}
+
+	reqURL := fmt.Sprintf("%s/auth/v1/admin/users?page=%d&per_page=%d", c.url, page, perPage)
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	req.Header.Set("Authorization", "Bearer "+c.secretKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error fetching admin users: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch admin users failed (%d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	var res struct {
+		Users []User `json:"users"`
+	}
+	if err := json.Unmarshal(respBytes, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode admin users: %w", err)
+	}
+
+	return res.Users, nil
+}
+
+// GetDB queries a table directly via Supabase PostgREST API
+func (c *Client) GetDB(table, queryParams, authToken string) ([]byte, error) {
+	reqURL := fmt.Sprintf("%s/rest/v1/%s", c.url, table)
+	if queryParams != "" {
+		if !strings.HasPrefix(queryParams, "?") {
+			reqURL += "?" + queryParams
+		} else {
+			reqURL += queryParams
+		}
+	}
+
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else if c.secretKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.secretKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.anonKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error querying table %s: %w", table, err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("query table %s failed (%d): %s", table, resp.StatusCode, string(respBytes))
+	}
+
+	return respBytes, nil
+}
+
+// PostDB inserts or updates records in a Supabase table via PostgREST
+func (c *Client) PostDB(table string, payload interface{}, preferHeader, authToken string) ([]byte, error) {
+	var bodyReader io.Reader
+	if payload != nil {
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewBuffer(bodyBytes)
+	}
+
+	reqURL := fmt.Sprintf("%s/rest/v1/%s", c.url, table)
+	req, err := http.NewRequest(http.MethodPost, reqURL, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else if c.secretKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.secretKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.anonKey)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if preferHeader != "" {
+		req.Header.Set("Prefer", preferHeader)
+	} else {
+		req.Header.Set("Prefer", "return=representation")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error inserting into table %s: %w", table, err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("insert into table %s failed (%d): %s", table, resp.StatusCode, string(respBytes))
+	}
+
+	return respBytes, nil
+}
+

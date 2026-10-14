@@ -1,6 +1,7 @@
 package product
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -140,9 +141,65 @@ func (r *CachedRepository) rebuildIndexLocked() {
 }
 
 func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, error) {
-	// If Supabase connection is available, query public.products table
 	if sbClient == nil {
 		return len(r.allCache), nil
+	}
+
+	// 1. Fetch live products from Supabase database (public.products)
+	dbBytes, err := sbClient.GetDB("products", "select=*&is_active=eq.true", "")
+	if err == nil && len(dbBytes) > 0 {
+		var dbProducts []struct {
+			ID            string  `json:"id"`
+			Code          string  `json:"code"`
+			Name          string  `json:"name"`
+			Category      string  `json:"category"`
+			Brand         string  `json:"brand"`
+			Price         float64 `json:"price"`
+			CostPrice     float64 `json:"cost_price"`
+			PointsReward  int64   `json:"points_reward"`
+			Stock         int     `json:"stock"`
+			Description   string  `json:"description"`
+			ImageURL      string  `json:"image_url"`
+			IsActive      bool    `json:"is_active"`
+		}
+		if err := json.Unmarshal(dbBytes, &dbProducts); err == nil && len(dbProducts) > 0 {
+			r.mu.Lock()
+			for _, dp := range dbProducts {
+				code := dp.Code
+				if code == "" {
+					code = strings.ToUpper(strings.ReplaceAll(dp.Name, " ", "_"))
+				}
+				brand := dp.Brand
+				if brand == "" {
+					brand = extractBrand(dp.Name)
+				}
+				ptsReward := dp.PointsReward
+				if ptsReward <= 0 {
+					ptsReward = int64(dp.Price * 0.01)
+				}
+				p := &Product{
+					ID:            dp.ID,
+					Code:          code,
+					Name:          dp.Name,
+					Category:      ProductCategory(strings.ToLower(dp.Category)),
+					Brand:         brand,
+					Price:         dp.Price,
+					OriginalPrice: dp.CostPrice,
+					PointsReward:  ptsReward,
+					Status:        "ACTIVE",
+					Description:   dp.Description,
+					Stock:         dp.Stock,
+					ImageURL:      dp.ImageURL,
+					UpdatedAt:     time.Now(),
+				}
+				r.products[p.Code] = p
+			}
+			r.lastSyncTime = time.Now()
+			r.rebuildIndexLocked()
+			count := len(r.allCache)
+			r.mu.Unlock()
+			return count, nil
+		}
 	}
 
 	// Re-index locally after sync
@@ -153,6 +210,44 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 	r.mu.Unlock()
 
 	return count, nil
+}
+
+func extractBrand(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "telkomsel"):
+		return "Telkomsel"
+	case strings.Contains(lower, "indosat"):
+		return "Indosat"
+	case strings.Contains(lower, "xl"):
+		return "XL"
+	case strings.Contains(lower, "axis"):
+		return "Axis"
+	case strings.Contains(lower, "tri") || strings.Contains(lower, "three"):
+		return "Tri"
+	case strings.Contains(lower, "smartfren"):
+		return "Smartfren"
+	case strings.Contains(lower, "pln"):
+		return "PLN"
+	case strings.Contains(lower, "dana"):
+		return "DANA"
+	case strings.Contains(lower, "gopay"):
+		return "GoPay"
+	case strings.Contains(lower, "ovo"):
+		return "OVO"
+	case strings.Contains(lower, "shopeepay"):
+		return "ShopeePay"
+	case strings.Contains(lower, "mobile legends"):
+		return "Mobile Legends"
+	case strings.Contains(lower, "free fire"):
+		return "Free Fire"
+	default:
+		parts := strings.Split(name, " ")
+		if len(parts) > 0 {
+			return parts[0]
+		}
+		return "General"
+	}
 }
 
 func (r *CachedRepository) seedInitialCatalog() {

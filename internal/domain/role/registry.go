@@ -147,12 +147,12 @@ func (r *Registry) GetMerchants() []BusinessDefinition {
 	return res
 }
 
-// Resolve resolves a given role string or email to a concrete BusinessDefinition
-func (r *Registry) Resolve(explicitRole, email string) BusinessDefinition {
+// Resolve resolves a given role string to a concrete BusinessDefinition
+func (r *Registry) Resolve(explicitRole, _ string) BusinessDefinition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// 1. If explicit role matches a registered definition, return immediately
+	// 1. If explicit role matches a registered definition from database, return it
 	if explicitRole != "" {
 		targetRole := Role(strings.ToLower(strings.TrimSpace(explicitRole)))
 		if def, ok := r.definitions[targetRole]; ok {
@@ -160,27 +160,6 @@ func (r *Registry) Resolve(explicitRole, email string) BusinessDefinition {
 		}
 	}
 
-	// 2. Automatic keyword resolution from email (clean, centralized)
-	emailLower := strings.ToLower(strings.TrimSpace(email))
-	if emailLower != "" {
-		// Priority checks: Superadmin first
-		if strings.Contains(emailLower, "superadmin") {
-			return r.definitions[RoleSuperAdmin]
-		}
-		if strings.Contains(emailLower, "kasir") {
-			return r.definitions[RoleKasir]
-		}
-
-		// Check all registered keywords dynamically
-		for _, def := range r.definitions {
-			for _, kw := range def.Keywords {
-				if strings.Contains(emailLower, kw) {
-					return def
-				}
-			}
-		}
-	}
-
-	// 3. Fallback to default customer role
+	// 2. Default fallback to regular user/customer
 	return r.definitions[RoleUser]
 }
