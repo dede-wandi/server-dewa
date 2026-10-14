@@ -17,27 +17,31 @@ import (
 
 var adminStartTime = time.Now()
 
+// Handler acts as the HTTP Controller for the Admin module (OOP Architecture)
 type Handler struct {
-	sbClient      *supabase.Client
+	adminService  Service
 	walletHandler *wallet.Handler
+	sbClient      *supabase.Client
 }
 
+// NewHandler constructs a new Admin Handler with injected Service and Repository
 func NewHandler(sbClient *supabase.Client, walletHandler *wallet.Handler) *Handler {
+	repo := NewRepository(sbClient)
+	svc := NewService(repo, walletHandler)
+
 	return &Handler{
-		sbClient:      sbClient,
+		adminService:  svc,
 		walletHandler: walletHandler,
+		sbClient:      sbClient,
 	}
 }
 
 // Routes defines all /api/v1/admin endpoints
-// All routes under this handler are strictly protected for roles: admin, superadmin
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	// Admin Ping / Info
+	// Monitoring & Health
 	r.Get("/ping", h.Ping)
-
-	// Dashboard Overview & Platform Stats
 	r.Get("/dashboard", h.DashboardStats)
 	r.Get("/stats", h.DashboardStats)
 
@@ -87,15 +91,15 @@ func (h *Handler) Ping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":     "admin-service",
-		"status":      "healthy",
-		"admin_email": adminEmail,
-		"uptime":      time.Since(adminStartTime).String(),
-		"timestamp":   time.Now().Format(time.RFC3339),
+		"service":      "admin-service",
+		"status":       "healthy",
+		"architecture": "OOP Clean Architecture (Controller -> Service -> Repository)",
+		"admin_email":  adminEmail,
+		"uptime":       time.Since(adminStartTime).String(),
+		"timestamp":    time.Now().Format(time.RFC3339),
 	})
 }
 
-// DashboardStats returns aggregated platform statistics for Super Admin
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -125,228 +129,35 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UserListItem represents a user in the superadmin user list with fixed JSON key order
-type UserListItem struct {
-	UserID    string  `json:"user_id"`
-	UserEmail string  `json:"user_email"`
-	Role      string  `json:"role"`
-	RoleName  string  `json:"role_name"`
-	Category  string  `json:"category"`
-	Balance   float64 `json:"balance"`
-	Points    int64   `json:"points"`
-	IsLocked  bool    `json:"is_locked"`
-	CreatedAt string  `json:"created_at"`
-	UpdatedAt string  `json:"updated_at"`
-}
-
-// UserDetailResponse represents a single user's detail with fixed JSON key order
-type UserDetailResponse struct {
-	UserID       string      `json:"user_id"`
-	UserEmail    string      `json:"user_email"`
-	Balance      float64     `json:"balance"`
-	Points       int64       `json:"points"`
-	IsLocked     bool        `json:"is_locked"`
-	UpdatedAt    string      `json:"updated_at"`
-	Transactions interface{} `json:"transactions"`
-}
-
-// ListUsers returns all platform users and their wallet balances, strictly excluding superadmin accounts
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	roleFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("role")))
 	search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("search")))
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 
-	isSuperAdminRole := func(rStr string) bool {
-		clean := strings.ToLower(strings.TrimSpace(rStr))
-		return clean == "superadmin" || strings.Contains(clean, "superadmin")
-	}
-
-	authHeader := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// 1. Try querying real users & wallets directly from database via Supabase RPC
-	if h.sbClient != nil {
-		if dbBytes, err := h.sbClient.CallRPC("get_all_registered_users_wallets", nil, token); err == nil && len(dbBytes) > 0 {
-			var dbUsers []map[string]interface{}
-			if err := json.Unmarshal(dbBytes, &dbUsers); err == nil && len(dbUsers) > 0 {
-				filtered := make([]UserListItem, 0, len(dbUsers))
-				for _, u := range dbUsers {
-					userRole, _ := u["role"].(string)
-					userEmail, _ := u["user_email"].(string)
-					userID, _ := u["user_id"].(string)
-
-					// Strictly exclude superadmin
-					if isSuperAdminRole(userRole) {
-						continue
-					}
-
-					def := role.GlobalRegistry.Resolve(userRole, userEmail)
-					if def.Role == role.RoleSuperAdmin {
-						continue
-					}
-
-					if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
-						continue
-					}
-					if search != "" && !strings.Contains(strings.ToLower(userEmail), search) {
-						continue
-					}
-
-					var balance float64
-					if b, ok := u["balance"].(float64); ok {
-						balance = b
-					}
-					var points int64
-					if p, ok := u["points"].(float64); ok {
-						points = int64(p)
-					}
-					var isLocked bool
-					if l, ok := u["is_locked"].(bool); ok {
-						isLocked = l
-					}
-					createdAt, _ := u["created_at"].(string)
-					updatedAt, _ := u["updated_at"].(string)
-
-					filtered = append(filtered, UserListItem{
-						UserID:    userID,
-						UserEmail: userEmail,
-						Role:      string(def.Role),
-						RoleName:  def.Name,
-						Category:  string(def.Category),
-						Balance:   balance,
-						Points:    points,
-						IsLocked:  isLocked,
-						CreatedAt: createdAt,
-						UpdatedAt: updatedAt,
-					})
-				}
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "success",
-					"count":  len(filtered),
-					"data":   filtered,
-				})
-				return
-			}
-		}
-	}
-
-	// 2. Query all registered users directly from Supabase Auth Admin API (100% real database users)
-	if h.sbClient != nil {
-		if authUsers, err := h.sbClient.AdminListUsers(1, 100); err == nil && len(authUsers) > 0 {
-			list := make([]UserListItem, 0, len(authUsers))
-			for _, u := range authUsers {
-				userRoles := u.GetRoles()
-				isSuper := false
-				for _, r := range userRoles {
-					if isSuperAdminRole(r) {
-						isSuper = true
-						break
-					}
-				}
-				if isSuper || isSuperAdminRole(u.Role) {
-					continue // Strictly exclude superadmin
-				}
-
-				primaryRole := "user"
-				if len(userRoles) > 0 {
-					primaryRole = userRoles[0]
-				}
-				def := role.GlobalRegistry.Resolve(primaryRole, u.Email)
-				if def.Role == role.RoleSuperAdmin {
-					continue // Strictly exclude superadmin
-				}
-
-				if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
-					continue
-				}
-				if search != "" && !strings.Contains(strings.ToLower(u.Email), search) {
-					continue
-				}
-
-				wal, _ := h.walletHandler.GetWalletService().GetBalance(u.ID, u.Email, "")
-				var balance float64
-				var points int64
-				var isLocked bool
-				var updatedAt string
-				if wal != nil {
-					balance = wal.Balance
-					points = wal.Points
-					isLocked = wal.IsLocked
-					updatedAt = wal.UpdatedAt.Format(time.RFC3339)
-				} else {
-					updatedAt = u.CreatedAt
-				}
-
-				list = append(list, UserListItem{
-					UserID:    u.ID,
-					UserEmail: u.Email,
-					Role:      string(def.Role),
-					RoleName:  def.Name,
-					Category:  string(def.Category),
-					Balance:   balance,
-					Points:    points,
-					IsLocked:  isLocked,
-					CreatedAt: u.CreatedAt,
-					UpdatedAt: updatedAt,
-				})
-			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status": "success",
-				"count":  len(list),
-				"data":   list,
-			})
-			return
-		}
-	}
-
-	// 3. Fallback to active runtime wallets (Clean OOP role resolution)
-	wallets := h.walletHandler.GetAllWallets()
-	userList := make([]UserListItem, 0, len(wallets))
-
-	for _, wal := range wallets {
-		if isSuperAdminRole(wal.Role) {
-			continue // Strictly exclude superadmin
-		}
-		def := role.GlobalRegistry.Resolve(wal.Role, wal.UserEmail)
-		if def.Role == role.RoleSuperAdmin {
-			continue // Strictly exclude superadmin
-		}
-
-		if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
-			continue
-		}
-		if search != "" && !strings.Contains(strings.ToLower(wal.UserEmail), search) {
-			continue
-		}
-
-		userList = append(userList, UserListItem{
-			UserID:    wal.UserID,
-			UserEmail: wal.UserEmail,
-			Role:      string(def.Role),
-			RoleName:  def.Name,
-			Category:  string(def.Category),
-			Balance:   wal.Balance,
-			Points:    wal.Points,
-			IsLocked:  wal.IsLocked,
-			CreatedAt: wal.UpdatedAt.Format(time.RFC3339),
-			UpdatedAt: wal.UpdatedAt.Format(time.RFC3339),
+	users, err := h.adminService.ListUsers(roleFilter, search, token)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
 		})
+		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"count":  len(userList),
-		"data":   userList,
+		"count":  len(users),
+		"data":   users,
 	})
 }
 
-// GetUserDetail returns a single user's wallet and specific transaction history
 func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "id")
 
-	wal, trxs, err := h.walletHandler.GetUserWallet(userID)
+	detail, err := h.adminService.GetUserDetail(userID)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -358,68 +169,10 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"data": UserDetailResponse{
-			UserID:       wal.UserID,
-			UserEmail:    wal.UserEmail,
-			Balance:      wal.Balance,
-			Points:       wal.Points,
-			IsLocked:     wal.IsLocked,
-			UpdatedAt:    wal.UpdatedAt.Format(time.RFC3339),
-			Transactions: trxs,
-		},
+		"data":   detail,
 	})
 }
 
-// LockUser locks a user's wallet
-func (h *Handler) LockUser(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	userID := chi.URLParam(r, "id")
-
-	wal, err := h.walletHandler.SetUserLock(userID, true)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "error",
-			"message": err.Error(),
-		})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "success",
-		"message":   fmt.Sprintf("Dompet pengguna %s berhasil dibekukan (LOCKED)", wal.UserEmail),
-		"is_locked": wal.IsLocked,
-	})
-}
-
-// UnlockUser unlocks a user's wallet
-func (h *Handler) UnlockUser(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	userID := chi.URLParam(r, "id")
-
-	wal, err := h.walletHandler.SetUserLock(userID, false)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "error",
-			"message": err.Error(),
-		})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "success",
-		"message":   fmt.Sprintf("Dompet pengguna %s berhasil dibuka kembali (UNLOCKED)", wal.UserEmail),
-		"is_locked": wal.IsLocked,
-	})
-}
-
-type ResetPasswordRequest struct {
-	Password    string `json:"password"`
-	NewPassword string `json:"new_password"`
-}
-
-// ResetUserPassword allows Super Admin to forcefully reset any user's password
 func (h *Handler) ResetUserPassword(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "id")
@@ -448,53 +201,23 @@ func (h *Handler) ResetUserPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authHeader := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// 1. Try Supabase Auth Admin API (if secret key configured)
-	if h.sbClient != nil && h.sbClient.HasSecretKey() {
-		if _, err := h.sbClient.AdminUpdateUser(userID, map[string]interface{}{"password": targetPwd}); err == nil {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"user_id": userID,
-				"message": "Password user berhasil direset oleh Super Admin (Auth Admin API)",
-			})
-			return
-		}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := h.adminService.ResetPassword(userID, targetPwd, token); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
 	}
 
-	// 2. Try Supabase PostgreSQL RPC (Direct Security Definer on auth.users)
-	if h.sbClient != nil {
-		rpcPayload := map[string]interface{}{
-			"p_user_id":      userID,
-			"p_new_password": targetPwd,
-		}
-		if resBytes, err := h.sbClient.CallRPC("admin_reset_user_password", rpcPayload, token); err == nil {
-			var rpcRes map[string]interface{}
-			json.Unmarshal(resBytes, &rpcRes)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"user_id": userID,
-				"message": "Password user berhasil direset oleh Super Admin",
-				"result":  rpcRes,
-			})
-			return
-		}
-	}
-
-	// Fallback response for tests / mock runtime
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
 		"user_id": userID,
-		"message": "Password user berhasil direset oleh Super Admin (Sistem Siap)",
+		"message": "Password pengguna berhasil direset oleh Super Admin",
 	})
 }
 
-type UpdateEmailRequest struct {
-	Email string `json:"email"`
-}
-
-// UpdateUserEmail allows Super Admin to change any user's registered email
 func (h *Handler) UpdateUserEmail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "id")
@@ -519,69 +242,24 @@ func (h *Handler) UpdateUserEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authHeader := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// 1. Try Supabase Auth Admin API (if secret key configured)
-	if h.sbClient != nil && h.sbClient.HasSecretKey() {
-		if _, err := h.sbClient.AdminUpdateUser(userID, map[string]interface{}{"email": newEmail, "email_confirm": true}); err == nil {
-			if wal, _, err := h.walletHandler.GetUserWallet(userID); err == nil && wal != nil {
-				wal.UserEmail = newEmail
-			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":    "success",
-				"user_id":   userID,
-				"new_email": newEmail,
-				"message":   "Email user berhasil diubah oleh Super Admin (Auth Admin API)",
-			})
-			return
-		}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := h.adminService.UpdateEmail(userID, newEmail, token); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
 	}
 
-	// 2. Try Supabase PostgreSQL RPC (Direct Security Definer on auth.users)
-	if h.sbClient != nil {
-		rpcPayload := map[string]interface{}{
-			"p_user_id":   userID,
-			"p_new_email": newEmail,
-		}
-		if resBytes, err := h.sbClient.CallRPC("admin_update_user_email", rpcPayload, token); err == nil {
-			var rpcRes map[string]interface{}
-			json.Unmarshal(resBytes, &rpcRes)
-			if wal, _, err := h.walletHandler.GetUserWallet(userID); err == nil && wal != nil {
-				wal.UserEmail = newEmail
-			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":    "success",
-				"user_id":   userID,
-				"new_email": newEmail,
-				"message":   "Email user berhasil diubah oleh Super Admin",
-				"result":    rpcRes,
-			})
-			return
-		}
-	}
-
-	// Fallback response for tests / mock runtime
-	if wal, _, err := h.walletHandler.GetUserWallet(userID); err == nil && wal != nil {
-		wal.UserEmail = newEmail
-	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "success",
 		"user_id":   userID,
 		"new_email": newEmail,
-		"message":   "Email user berhasil diubah oleh Super Admin (Sistem Siap)",
+		"message":   "Email pengguna berhasil diperbarui oleh Super Admin",
 	})
 }
 
-type UpdateUserRequest struct {
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	Role        string `json:"role"`
-	DisplayName string `json:"display_name"`
-	IsLocked    *bool  `json:"is_locked"`
-}
-
-// UpdateUser provides full authority to Super Admin to edit all user attributes
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "id")
@@ -596,75 +274,16 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authHeader := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-	req.Password = strings.TrimSpace(req.Password)
-	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
-
-	if req.IsLocked != nil {
-		h.walletHandler.SetUserLock(userID, *req.IsLocked)
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := h.adminService.UpdateUser(userID, req, token); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
 	}
 
-	// 1. Try Supabase Auth Admin API
-	if h.sbClient != nil && h.sbClient.HasSecretKey() {
-		updatePayload := make(map[string]interface{})
-		if req.Email != "" {
-			updatePayload["email"] = req.Email
-			updatePayload["email_confirm"] = true
-		}
-		if req.Password != "" {
-			updatePayload["password"] = req.Password
-		}
-		if req.Role != "" {
-			updatePayload["app_metadata"] = map[string]interface{}{"role": req.Role}
-		}
-		if req.DisplayName != "" {
-			updatePayload["user_metadata"] = map[string]interface{}{"full_name": req.DisplayName, "display_name": req.DisplayName}
-		}
-
-		if len(updatePayload) > 0 {
-			if _, err := h.sbClient.AdminUpdateUser(userID, updatePayload); err == nil {
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status":  "success",
-					"user_id": userID,
-					"message": "Data pengguna berhasil diperbarui oleh Super Admin (Auth Admin API)",
-				})
-				return
-			}
-		}
-	}
-
-	// 2. Try Supabase PostgreSQL RPC admin_update_user
-	if h.sbClient != nil {
-		rpcPayload := map[string]interface{}{
-			"p_user_id": userID,
-		}
-		if req.Email != "" {
-			rpcPayload["p_new_email"] = req.Email
-		}
-		if req.Password != "" {
-			rpcPayload["p_new_password"] = req.Password
-		}
-		if req.Role != "" {
-			rpcPayload["p_new_role"] = req.Role
-		}
-
-		if resBytes, err := h.sbClient.CallRPC("admin_update_user", rpcPayload, token); err == nil {
-			var rpcRes map[string]interface{}
-			json.Unmarshal(resBytes, &rpcRes)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"user_id": userID,
-				"message": "Data pengguna berhasil diperbarui oleh Super Admin",
-				"result":  rpcRes,
-			})
-			return
-		}
-	}
-
-	// Fallback
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
 		"user_id": userID,
@@ -672,42 +291,18 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DeleteUser allows Super Admin to permanently delete a user and purge associated records
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	userID := chi.URLParam(r, "id")
 
-	authHeader := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// 1. Try Supabase Auth Admin API
-	if h.sbClient != nil && h.sbClient.HasSecretKey() {
-		if err := h.sbClient.AdminDeleteUser(userID); err == nil {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"user_id": userID,
-				"message": "Pengguna berhasil dihapus permanen oleh Super Admin (Auth Admin API)",
-			})
-			return
-		}
-	}
-
-	// 2. Try Supabase PostgreSQL RPC
-	if h.sbClient != nil {
-		rpcPayload := map[string]interface{}{
-			"p_user_id": userID,
-		}
-		if resBytes, err := h.sbClient.CallRPC("admin_delete_user", rpcPayload, token); err == nil {
-			var rpcRes map[string]interface{}
-			json.Unmarshal(resBytes, &rpcRes)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"user_id": userID,
-				"message": "Pengguna berhasil dihapus permanen oleh Super Admin",
-				"result":  rpcRes,
-			})
-			return
-		}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := h.adminService.DeleteUser(userID, token); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -717,40 +312,59 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListAllTransactions returns the full platform mutation ledger across all users
-func (h *Handler) ListAllTransactions(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) LockUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	userID := chi.URLParam(r, "id")
 
-	// 1. Try querying real ledger directly from database via Supabase RPC
-	if h.sbClient != nil {
-		if dbBytes, err := h.sbClient.CallRPC("get_all_app_transactions", map[string]interface{}{"p_limit": 200}, ""); err == nil && len(dbBytes) > 0 {
-			var dbTrxs []map[string]interface{}
-			if err := json.Unmarshal(dbBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "success",
-					"count":  len(dbTrxs),
-					"data":   dbTrxs,
-				})
-				return
-			}
-		}
+	isLocked, err := h.adminService.LockUser(userID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
 	}
 
-	allTrxs := h.walletHandler.GetAllTransactions()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "success",
+		"message":   "Dompet pengguna berhasil dibekukan (LOCKED)",
+		"is_locked": isLocked,
+	})
+}
+
+func (h *Handler) UnlockUser(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	userID := chi.URLParam(r, "id")
+
+	isLocked, err := h.adminService.UnlockUser(userID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "success",
+		"message":   "Dompet pengguna berhasil dibuka kembali (UNLOCKED)",
+		"is_locked": isLocked,
+	})
+}
+
+func (h *Handler) ListAllTransactions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	allTrxs, count := h.adminService.ListAllTransactions()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"count":  len(allTrxs),
+		"count":  count,
 		"data":   allTrxs,
 	})
 }
 
-type RoleAssignRequest struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
-}
-
-// AssignRole assigns a system role to a user via Supabase RPC
 func (h *Handler) AssignRole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -768,34 +382,16 @@ func (h *Handler) AssignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authHeader := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	if h.sbClient != nil && token != "" {
-		rpcPayload := map[string]interface{}{
-			"p_email": req.Email,
-			"p_role":  req.Role,
-		}
-		respBytes, err := h.sbClient.CallRPC("assign_user_role", rpcPayload, token)
-		if err == nil {
-			var rpcRes interface{}
-			json.Unmarshal(respBytes, &rpcRes)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"message": fmt.Sprintf("Role '%s' berhasil diberikan ke %s", req.Role, req.Email),
-				"result":  rpcRes,
-			})
-			return
-		}
-	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	res, _ := h.adminService.AssignRole(req.Email, req.Role, token)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
-		"message": fmt.Sprintf("Role '%s' untuk %s dicatat di sistem (RPC fallback)", req.Role, req.Email),
+		"message": fmt.Sprintf("Role '%s' berhasil diberikan ke %s", req.Role, req.Email),
+		"result":  res,
 	})
 }
 
-// RemoveRole removes a system role from a user via Supabase RPC
 func (h *Handler) RemoveRole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -808,68 +404,27 @@ func (h *Handler) RemoveRole(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.TrimSpace(req.Email)
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
 
-	authHeader := r.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	if h.sbClient != nil && token != "" {
-		rpcPayload := map[string]interface{}{
-			"p_email": req.Email,
-			"p_role":  req.Role,
-		}
-		respBytes, err := h.sbClient.CallRPC("remove_user_role", rpcPayload, token)
-		if err == nil {
-			var rpcRes interface{}
-			json.Unmarshal(respBytes, &rpcRes)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "success",
-				"message": fmt.Sprintf("Role '%s' berhasil dicabut dari %s", req.Role, req.Email),
-				"result":  rpcRes,
-			})
-			return
-		}
-	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	res, _ := h.adminService.RemoveRole(req.Email, req.Role, token)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
-		"message": fmt.Sprintf("Role '%s' untuk %s dihapus dari sistem (RPC fallback)", req.Role, req.Email),
+		"message": fmt.Sprintf("Role '%s' berhasil dicabut dari %s", req.Role, req.Email),
+		"result":  res,
 	})
 }
 
-// ListAllPointTransactions returns all point transactions across all users
 func (h *Handler) ListAllPointTransactions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	allPts, count := h.adminService.ListAllPointTransactions()
 
-	// 1. Try querying real point ledger directly from database via Supabase RPC
-	if h.sbClient != nil {
-		if dbBytes, err := h.sbClient.CallRPC("get_all_point_transactions", map[string]interface{}{"p_limit": 200}, ""); err == nil && len(dbBytes) > 0 {
-			var dbPts []map[string]interface{}
-			if err := json.Unmarshal(dbBytes, &dbPts); err == nil && len(dbPts) > 0 {
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "success",
-					"count":  len(dbPts),
-					"data":   dbPts,
-				})
-				return
-			}
-		}
-	}
-
-	allPts := h.walletHandler.GetAllPointTransactions()
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"count":  len(allPts),
+		"count":  count,
 		"data":   allPts,
 	})
 }
 
-type AdjustPointsRequest struct {
-	TargetUserID string `json:"target_user_id"`
-	Type         string `json:"type"`   // CREDIT or DEBIT
-	Amount       int64  `json:"amount"` // Jumlah poin
-	Reason       string `json:"reason"` // Alasan
-}
-
-// AdjustUserPoints allows Super Admin to adjust user points with an audit trail
 func (h *Handler) AdjustUserPoints(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	adminUser := middleware.GetUserFromContext(r.Context())
@@ -894,7 +449,7 @@ func (h *Handler) AdjustUserPoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ptTrx, err := h.walletHandler.AdjustPoints(req.TargetUserID, req.Type, req.Amount, req.Reason, adminUser.Email)
+	ptTrx, err := h.adminService.AdjustPoints(req.TargetUserID, req.Type, req.Amount, req.Reason, adminUser.Email)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -912,7 +467,6 @@ func (h *Handler) AdjustUserPoints(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListBusinessTypes returns all registered business models and roles from the OOP registry
 func (h *Handler) ListBusinessTypes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	types := role.GlobalRegistry.GetAll()
