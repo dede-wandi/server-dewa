@@ -8,6 +8,7 @@ import (
 	"github.com/dede-wandi/server-dewa/internal/config"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
 	"github.com/dede-wandi/server-dewa/internal/modules/admin"
+	"github.com/dede-wandi/server-dewa/internal/modules/article"
 	"github.com/dede-wandi/server-dewa/internal/modules/auth"
 	"github.com/dede-wandi/server-dewa/internal/modules/banner"
 	"github.com/dede-wandi/server-dewa/internal/modules/product"
@@ -83,6 +84,7 @@ func New(cfg *config.Config) *chi.Mux {
 	transactionHandler := transaction.NewHandler(walletHandler.GetWalletService(), productHandler.GetService(), sbClient)
 	adminHandler := admin.NewHandler(sbClient, walletHandler)
 	bannerHandler := banner.NewHandler(sbClient)
+	articleHandler := article.NewHandler(sbClient)
 
 	r.Route("/api/v1", func(api chi.Router) {
 		// Auth endpoints (public login/register/refresh, protected /me)
@@ -95,6 +97,10 @@ func New(cfg *config.Config) *chi.Mux {
 		api.Mount("/banners", bannerHandler.Routes())
 		api.Mount("/promos", bannerHandler.Routes())
 
+		// Public articles & news (edukasi, panduan kasir, tips bisnis mitra)
+		api.Mount("/articles", articleHandler.Routes())
+		api.Mount("/news", articleHandler.Routes())
+
 		// DEDICATED SUPER ADMIN & ADMIN ENDPOINTS: Wajib login & role 'admin' / 'superadmin'
 		api.Route("/admin", func(adminRouter chi.Router) {
 			adminRouter.Use(middleware.RequireAuth(sbClient))
@@ -103,6 +109,8 @@ func New(cfg *config.Config) *chi.Mux {
 			adminRouter.Post("/products/sync", productHandler.SyncProducts)
 			adminRouter.Mount("/banners", bannerHandler.AdminRoutes())
 			adminRouter.Mount("/promos", bannerHandler.AdminRoutes())
+			adminRouter.Mount("/articles", articleHandler.AdminRoutes())
+			adminRouter.Mount("/news", articleHandler.AdminRoutes())
 		})
 
 		// PROTECTED MICROSERVICES: Semua modul transaksi & dompet wajib melalui autentikasi login Supabase

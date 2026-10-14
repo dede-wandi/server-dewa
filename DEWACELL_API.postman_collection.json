@@ -990,6 +990,63 @@
                         }
                     ],
                     "description": "Endpoint banner promosi beranda dan slider promo untuk aplikasi mobile DewaCell."
+                },
+                {
+                    "name": "Articles & News",
+                    "item": [
+                        {
+                            "name": "Get Published Articles (Filtered by Category & Search)",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/articles?category=TIPS_BISNIS&search=pulsa",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "articles"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "category",
+                                            "value": "TIPS_BISNIS",
+                                            "description": "Kategori artikel/berita:\n- ALL: Seluruh kategori\n- TIPS_BISNIS: Strategi jualan konter & kiat sukses mitra\n- PANDUAN_KASIR: Tutorial cetak struk thermal, barcode, POS\n- UPDATE_SISTEM: Pembaruan fitur, keamanan, jadwal maintenance\n- BERITA_MITRA: Kabar & pengumuman komunitas DewaCell"
+                                        },
+                                        {
+                                            "key": "search",
+                                            "value": "pulsa",
+                                            "description": "Pencarian kata kunci pada judul dan ringkasan artikel"
+                                        }
+                                    ]
+                                },
+                                "description": "### 📚 Artikel & Berita Pojok Edukasi Mitra (`/api/v1/articles`)\nEndpoint publik untuk membaca artikel blog, tips bisnis konter, dan panduan teknis operasional kasir PPOB DewaCell.\n\n#### 📌 Parameter Filter (Query String):\n| Parameter | Nilai yang Diterima | Keterangan |\n| :--- | :--- | :--- |\n| `category` | `ALL` | Mengambil seluruh kategori artikel |\n| | `TIPS_BISNIS` | Panduan melipatgandakan omzet pulsa & PPOB |\n| | `PANDUAN_KASIR` | Tutorial printer bluetooth thermal, kasir POS |\n| | `UPDATE_SISTEM` | Catatan rilis fitur & keamanan akun |\n| | `BERITA_MITRA` | Informasi event, promo nasional, dan komunitas |\n| `search` | String (misal: `bluetooth`) | Mencari kata kunci pada judul & kutipan artikel |"
+                            }
+                        },
+                        {
+                            "name": "Get Article Detail (by Slug or ID)",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/articles/cara-cetak-struk-kasir-pos-bluetooth",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "articles",
+                                        "cara-cetak-struk-kasir-pos-bluetooth"
+                                    ]
+                                },
+                                "description": "Mengambil isi lengkap artikel blog berita DewaCell berdasarkan slug SEO friendly (contoh: `cara-cetak-struk-kasir-pos-bluetooth`) atau UUID artikel."
+                            }
+                        }
+                    ],
+                    "description": "Pusat artikel edukasi, blog bisnis, dan panduan fitur aplikasi untuk mitra DewaCell."
                 }
             ]
         },
@@ -1998,6 +2055,195 @@
                         }
                     ],
                     "description": "Pengelolaan penuh (CRUD) banner promosi oleh Admin & Superadmin."
+                },
+                {
+                    "name": "Articles & News",
+                    "item": [
+                        {
+                            "name": "Get All Articles (Admin)",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/articles?category=ALL&search=",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "articles"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "category",
+                                            "value": "ALL",
+                                            "description": "Filter kategori: ALL | TIPS_BISNIS | PANDUAN_KASIR | UPDATE_SISTEM | BERITA_MITRA"
+                                        },
+                                        {
+                                            "key": "search",
+                                            "value": "",
+                                            "description": "Kata kunci pencarian judul artikel"
+                                        }
+                                    ]
+                                },
+                                "description": "Menampilkan seluruh daftar artikel & berita (termasuk draf artikel yang belum di-publish)."
+                            }
+                        },
+                        {
+                            "name": "Get Article Detail (Admin)",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/articles/{{article_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "articles",
+                                        "{{article_id}}"
+                                    ]
+                                },
+                                "description": "Mengambil rincian artikel berdasarkan ID atau slug untuk keperluan edit."
+                            }
+                        },
+                        {
+                            "name": "Create Article (Admin)",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"title\": \"Cara Mendapatkan Cashback Poin Transaksi PPOB DewaCell\",\n    \"slug\": \"cara-mendapatkan-cashback-poin-ppob\",\n    \"category\": \"TIPS_BISNIS\",\n    \"excerpt\": \"Kumpulkan poin reward tanpa batas dari setiap transaksi pulsa, token, dan tagihan bulanan.\",\n    \"content\": \"Setiap kali Anda melakukan pembayaran transaksi di DewaCell, akun Anda secara otomatis mendapatkan poin reward yang dapat ditukar menjadi saldo kasir.\\n\\n1. **Transaksi Harian**: Transaksi pulsa di atas Rp 25.000 otomatis mendapatkan 10 poin.\\n2. **Tukar Poin**: Poin yang terkumpul dapat ditukarkan di Tab Poin menjadi saldo dompet gratis.\\n3. **Promo Khusus**: Pantau banner promosi untuk event double point setiap akhir pekan!\",\n    \"thumbnail_url\": \"https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=800&auto=format&fit=crop&q=80\",\n    \"author\": \"Tim Edukasi DewaCell\",\n    \"reading_time\": 3,\n    \"is_published\": true,\n    \"tags\": [\"poin\", \"reward\", \"cashback\", \"ppob\"]\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/articles",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "articles"
+                                    ]
+                                },
+                                "description": "Membuat artikel edukasi, berita, atau panduan baru untuk mitra DewaCell."
+                            }
+                        },
+                        {
+                            "name": "Update Article (Admin)",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n    \"title\": \"Cara Mendapatkan Cashback Poin Transaksi PPOB DewaCell (Update 2026)\",\n    \"is_published\": true,\n    \"reading_time\": 4\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/articles/{{article_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "articles",
+                                        "{{article_id}}"
+                                    ]
+                                },
+                                "description": "Memperbarui isi, status publish, atau kategori artikel."
+                            }
+                        },
+                        {
+                            "name": "Delete Article (Admin)",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "DELETE",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/articles/{{article_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "articles",
+                                        "{{article_id}}"
+                                    ]
+                                },
+                                "description": "Menghapus artikel secara permanen."
+                            }
+                        }
+                    ],
+                    "description": "Pengelolaan penuh (CRUD) artikel, berita, dan panduan edukasi mitra oleh Admin & Superadmin."
                 }
             ]
         }
