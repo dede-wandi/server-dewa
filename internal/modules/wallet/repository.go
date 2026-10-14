@@ -17,8 +17,10 @@ type Repository interface {
 	SetLock(userID string, locked bool) (*Wallet, error)
 
 	AddTransaction(trx *WalletTransaction)
+	UpdateTransaction(trx *WalletTransaction)
 	GetTransactionsByUser(userID string) []*WalletTransaction
 	FindTransactionByCode(code string) (*WalletTransaction, string)
+	GetPendingTopUps() []*WalletTransaction
 	IsReferenceRefunded(refCode string) bool
 	GetAllTransactions() []*WalletTransaction
 
@@ -144,6 +146,33 @@ func (r *MemoryRepository) AddTransaction(trx *WalletTransaction) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.addTransactionInternal(trx)
+}
+
+func (r *MemoryRepository) UpdateTransaction(trx *WalletTransaction) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if trx.TransactionCode != "" {
+		codeKey := strings.ToLower(trx.TransactionCode)
+		r.transactionsByCode[codeKey] = trx
+	}
+	if trx.ID != "" {
+		idKey := strings.ToLower(trx.ID)
+		r.transactionsByCode[idKey] = trx
+	}
+}
+
+func (r *MemoryRepository) GetPendingTopUps() []*WalletTransaction {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	res := make([]*WalletTransaction, 0)
+	for _, trxs := range r.transactions {
+		for _, t := range trxs {
+			if t.Category == CategoryTopup && t.Status == "PENDING" {
+				res = append(res, t)
+			}
+		}
+	}
+	return res
 }
 
 func (r *MemoryRepository) GetTransactionsByUser(userID string) []*WalletTransaction {

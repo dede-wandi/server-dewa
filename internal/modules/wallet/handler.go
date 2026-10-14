@@ -46,9 +46,10 @@ func (h *Handler) GetPointService() PointService {
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	// Public ping/info
+	// Public ping/info/callback
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
+	r.Post("/topup/callback", h.TopUpCallback)
 
 	// User endpoints (requires login token)
 	r.Get("/balance", h.GetBalance)
@@ -68,6 +69,11 @@ func (h *Handler) Routes() chi.Router {
 		admin.Use(middleware.RequireRoles("admin", "superadmin"))
 		admin.Post("/adjust", h.AdjustBalance)
 		admin.Get("/admin/users", h.AdminListUserWallets)
+		admin.Get("/topup/pending", h.GetPendingTopUps)
+		admin.Post("/topup/approve", h.ApproveTopUp)
+		admin.Post("/topup/{code}/approve", h.ApproveTopUp)
+		admin.Post("/topup/reject", h.RejectTopUp)
+		admin.Post("/topup/{code}/reject", h.RejectTopUp)
 	})
 
 	return r
@@ -230,8 +236,8 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":      "success",
-		"message":     fmt.Sprintf("Top up sebesar Rp %s berhasil diverifikasi!", formatRupiah(int64(req.Amount))),
+		"status":  "pending",
+		"message": fmt.Sprintf("Permintaan top up sebesar Rp %s berhasil dibuat dengan status PENDING. Silakan lakukan pembayaran ke kode referensi atau tunggu persetujuan Admin.", formatRupiah(int64(req.Amount))),
 		"transaction": trx,
 		"wallet": map[string]interface{}{
 			"balance":   wal.Balance,
@@ -239,6 +245,153 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 			"points":    wal.Points,
 		},
 	})
+}
+
+func (h *Handler) GetPendingTopUps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	pending := h.walletService.GetPendingTopUps()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"count":  len(pending),
+		"data":   pending,
+	})
+}
+
+func (h *Handler) ApproveTopUp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	adminUser := middleware.GetUserFromContext(r.Context())
+	if adminUser == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req ApproveTopUpRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	paramCode := chi.URLParam(r, "code")
+	if paramCode != "" && req.TransactionCode == "" {
+		req.TransactionCode = paramCode
+	}
+
+	if req.TransactionCode == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "transaction_code wajib disertakan",
+		})
+		return
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	trx, targetWallet, err := h.walletService.ApproveTopUp(adminUser, token, req.TransactionCode, req.Notes)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":      "success",
+		"message":     fmt.Sprintf("Top up transaksi %s sebesar Rp %s berhasil disetujui dan saldo telah ditambahkan!", trx.TransactionCode, formatRupiah(int64(trx.Amount))),
+		"transaction": trx,
+		"target_user_wallet": map[string]interface{}{
+			"user_id":        targetWallet.UserID,
+			"user_email":     targetWallet.UserEmail,
+			"balance_before": trx.BalanceBefore,
+			"balance_after":  trx.BalanceAfter,
+			"formatted":      fmt.Sprintf("Rp %s", formatRupiah(int64(targetWallet.Balance))),
+		},
+	})
+}
+
+func (h *Handler) RejectTopUp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	adminUser := middleware.GetUserFromContext(r.Context())
+	if adminUser == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req RejectTopUpRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	paramCode := chi.URLParam(r, "code")
+	if paramCode != "" && req.TransactionCode == "" {
+		req.TransactionCode = paramCode
+	}
+
+	if req.TransactionCode == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "transaction_code wajib disertakan",
+		})
+		return
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	trx, err := h.walletService.RejectTopUp(adminUser, token, req.TransactionCode, req.Reason)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":      "success",
+		"message":     fmt.Sprintf("Permintaan top up %s berhasil ditolak.", trx.TransactionCode),
+		"transaction": trx,
+	})
+}
+
+func (h *Handler) TopUpCallback(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req TopUpCallbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload callback tidak valid: JSON diperlukan",
+		})
+		return
+	}
+
+	trx, targetWallet, err := h.walletService.ProcessTopUpCallback(req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	res := map[string]interface{}{
+		"status":      "success",
+		"message":     "Callback pembayaran top up berhasil diproses",
+		"transaction": trx,
+	}
+	if targetWallet != nil {
+		res["target_user_wallet"] = map[string]interface{}{
+			"user_id":       targetWallet.UserID,
+			"user_email":    targetWallet.UserEmail,
+			"balance_after": targetWallet.Balance,
+			"formatted":     fmt.Sprintf("Rp %s", formatRupiah(int64(targetWallet.Balance))),
+		}
+	}
+
+	json.NewEncoder(w).Encode(res)
 }
 
 func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {

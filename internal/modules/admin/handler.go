@@ -70,6 +70,13 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/refund", h.walletHandler.Refund)
 	r.Post("/wallets/refund", h.walletHandler.Refund)
 
+	// Top Up Approval & Verification (Super Admin)
+	r.Get("/wallets/topup/pending", h.walletHandler.GetPendingTopUps)
+	r.Post("/wallets/topup/approve", h.walletHandler.ApproveTopUp)
+	r.Post("/wallets/topup/{code}/approve", h.walletHandler.ApproveTopUp)
+	r.Post("/wallets/topup/reject", h.walletHandler.RejectTopUp)
+	r.Post("/wallets/topup/{code}/reject", h.walletHandler.RejectTopUp)
+
 	// Platform-wide Ledger & Transactions (All users)
 	r.Get("/transactions", h.ListAllTransactions)
 	r.Get("/ledger", h.ListAllTransactions)

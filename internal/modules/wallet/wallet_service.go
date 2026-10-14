@@ -17,6 +17,10 @@ type WalletService interface {
 	GetHistory(userID string) []*WalletTransaction
 	Pay(userID, email, token string, req PayRequest) (*WalletTransaction, *Wallet, error)
 	TopUp(userID, email, token string, req TopUpRequest) (*WalletTransaction, *Wallet, error)
+	ApproveTopUp(adminUser *supabase.User, token string, transactionCode, notes string) (*WalletTransaction, *Wallet, error)
+	RejectTopUp(adminUser *supabase.User, token string, transactionCode, reason string) (*WalletTransaction, error)
+	ProcessTopUpCallback(req TopUpCallbackRequest) (*WalletTransaction, *Wallet, error)
+	GetPendingTopUps() []*WalletTransaction
 	Refund(caller *supabase.User, token string, req RefundRequest) (*WalletTransaction, *Wallet, error)
 	AdjustBalance(adminUser *supabase.User, token string, req AdjustRequest) (*WalletTransaction, *Wallet, error)
 
@@ -204,27 +208,26 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 	if channel == "" {
 		channel = "BCA Virtual Account"
 	}
+	notes := strings.TrimSpace(req.Notes)
 
-	// 1. Try Supabase RPC
+	// 1. Try Supabase RPC request_app_wallet_topup (returns status PENDING)
 	if s.sbClient != nil && token != "" {
 		rpcPayload := map[string]interface{}{
-			"p_user_id":      userID,
-			"p_type":         TypeCredit,
-			"p_category":     CategoryTopup,
-			"p_amount":       req.Amount,
-			"p_title":        fmt.Sprintf("Top Up Saldo via %s", channel),
-			"p_description":  fmt.Sprintf("Deposit saldo instan melalui metode pembayaran %s", channel),
-			"p_reference_id": fmt.Sprintf("VA-%s-%d", strings.ReplaceAll(channel, " ", ""), time.Now().Unix()),
+			"p_user_id": userID,
+			"p_amount":  req.Amount,
+			"p_channel": channel,
+			"p_notes":   notes,
 		}
-		if respBytes, err := s.sbClient.CallRPC("process_app_wallet_mutation", rpcPayload, token); err == nil {
+		if respBytes, err := s.sbClient.CallRPC("request_app_wallet_topup", rpcPayload, token); err == nil {
 			var rpcRes map[string]interface{}
 			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
-				wal := s.repo.GetOrCreateWallet(userID, email)
-				balAfter, _ := rpcRes["balance_after"].(float64)
-				wal.Balance = balAfter
-				s.repo.SaveWallet(wal)
+				wal, _ := s.GetBalance(userID, email, token)
+				if wal == nil {
+					wal = s.repo.GetOrCreateWallet(userID, email)
+				}
 
 				trxCode, _ := rpcRes["transaction_code"].(string)
+				paymentCode, _ := rpcRes["payment_code"].(string)
 				trx := &WalletTransaction{
 					ID:              fmt.Sprintf("%v", rpcRes["transaction_id"]),
 					TransactionCode: trxCode,
@@ -232,12 +235,13 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 					Type:            TypeCredit,
 					Category:        CategoryTopup,
 					Amount:          req.Amount,
-					BalanceBefore:   rpcRes["balance_before"].(float64),
-					BalanceAfter:    balAfter,
-					Title:           fmt.Sprintf("Top Up Saldo via %s", channel),
-					Description:     fmt.Sprintf("Deposit saldo instan melalui metode pembayaran %s", channel),
-					ReferenceID:     rpcPayload["p_reference_id"].(string),
-					Status:          "SUCCESS",
+					BalanceBefore:   wal.Balance,
+					BalanceAfter:    wal.Balance, // Saldo tidak bertambah saat masih PENDING
+					Title:           fmt.Sprintf("Permintaan Top Up Saldo via %s", channel),
+					Description:     "Menunggu pembayaran dan verifikasi admin / callback payment gateway",
+					ReferenceID:     paymentCode,
+					AdminNotes:      notes,
+					Status:          "PENDING",
 					CreatedAt:       time.Now(),
 				}
 				s.repo.AddTransaction(trx)
@@ -246,14 +250,16 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 		}
 	}
 
-	// 2. In-Memory fallback
-	wal := s.repo.GetOrCreateWallet(userID, email)
-	balanceBefore := wal.Balance
-	wal.Balance += req.Amount
-	balanceAfter := wal.Balance
-	s.repo.SaveWallet(wal)
+	// 2. In-Memory fallback (status PENDING, balance NOT added)
+	wal, _ := s.GetBalance(userID, email, token)
+	if wal == nil {
+		wal = s.repo.GetOrCreateWallet(userID, email)
+	}
 
 	trxCode := fmt.Sprintf("TOP-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	cleanChannel := strings.ToUpper(strings.ReplaceAll(channel, " ", ""))
+	refID := fmt.Sprintf("VA-%s-%d", cleanChannel, time.Now().Unix())
+
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("top-%d", time.Now().UnixNano()),
 		TransactionCode: trxCode,
@@ -261,16 +267,192 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 		Type:            TypeCredit,
 		Category:        CategoryTopup,
 		Amount:          req.Amount,
-		BalanceBefore:   balanceBefore,
-		BalanceAfter:    balanceAfter,
-		Title:           fmt.Sprintf("Top Up Saldo via %s", channel),
-		Description:     fmt.Sprintf("Deposit saldo instan melalui metode pembayaran %s", channel),
-		ReferenceID:     fmt.Sprintf("VA-%s-%d", strings.ReplaceAll(channel, " ", ""), time.Now().Unix()),
-		Status:          "SUCCESS",
+		BalanceBefore:   wal.Balance,
+		BalanceAfter:    wal.Balance, // Saldo tetap sebelum disetujui
+		Title:           fmt.Sprintf("Permintaan Top Up Saldo via %s", channel),
+		Description:     "Menunggu pembayaran dan verifikasi admin / callback payment gateway",
+		ReferenceID:     refID,
+		AdminNotes:      notes,
+		Status:          "PENDING",
 		CreatedAt:       time.Now(),
 	}
 	s.repo.AddTransaction(trx)
 	return trx, wal, nil
+}
+
+func (s *walletService) ApproveTopUp(adminUser *supabase.User, token string, transactionCode, notes string) (*WalletTransaction, *Wallet, error) {
+	transactionCode = strings.TrimSpace(transactionCode)
+	if transactionCode == "" {
+		return nil, nil, errors.New("Kode transaksi (transaction_code) wajib disertakan")
+	}
+
+	// 1. Try Supabase RPC approve_app_wallet_topup
+	if s.sbClient != nil && token != "" {
+		var adminID interface{} = nil
+		if adminUser != nil && adminUser.ID != "" {
+			adminID = adminUser.ID
+		}
+		rpcPayload := map[string]interface{}{
+			"p_transaction_code": transactionCode,
+			"p_admin_id":         adminID,
+			"p_admin_notes":      notes,
+		}
+		if respBytes, err := s.sbClient.CallRPC("approve_app_wallet_topup", rpcPayload, token); err == nil {
+			var rpcRes map[string]interface{}
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
+				targetUID, _ := rpcRes["user_id"].(string)
+				balAfter, _ := rpcRes["balance_after"].(float64)
+				balBefore, _ := rpcRes["balance_before"].(float64)
+				amt, _ := rpcRes["amount"].(float64)
+
+				wal := s.repo.GetOrCreateWallet(targetUID, "")
+				wal.Balance = balAfter
+				s.repo.SaveWallet(wal)
+
+				trx, _ := s.repo.FindTransactionByCode(transactionCode)
+				if trx == nil {
+					trx = &WalletTransaction{
+						ID:              fmt.Sprintf("%v", rpcRes["transaction_id"]),
+						TransactionCode: transactionCode,
+						UserID:          targetUID,
+						Type:            TypeCredit,
+						Category:        CategoryTopup,
+						Amount:          amt,
+						ReferenceID:     transactionCode,
+						CreatedAt:       time.Now(),
+					}
+					s.repo.AddTransaction(trx)
+				}
+				trx.Status = "SUCCESS"
+				trx.BalanceBefore = balBefore
+				trx.BalanceAfter = balAfter
+				trx.AdminNotes = notes
+				if adminUser != nil {
+					trx.AdminID = adminUser.ID
+					trx.AdminEmail = adminUser.Email
+				}
+				trx.Title = "Top Up Saldo (Disetujui Admin)"
+				trx.Description = fmt.Sprintf("Deposit saldo telah diverifikasi dan disetujui. Catatan: %s", notes)
+				s.repo.UpdateTransaction(trx)
+				return trx, wal, nil
+			}
+		}
+	}
+
+	// 2. In-Memory fallback
+	trx, targetUserID := s.repo.FindTransactionByCode(transactionCode)
+	if trx == nil {
+		return nil, nil, fmt.Errorf("Transaksi top up '%s' tidak ditemukan", transactionCode)
+	}
+
+	if trx.Status != "PENDING" {
+		return nil, nil, fmt.Errorf("Transaksi '%s' tidak dapat disetujui karena status saat ini adalah %s", transactionCode, trx.Status)
+	}
+
+	wal, _ := s.GetBalance(targetUserID, "", token)
+	if wal == nil {
+		wal = s.repo.GetOrCreateWallet(targetUserID, "")
+	}
+
+	balanceBefore := wal.Balance
+	wal.Balance += trx.Amount
+	balanceAfter := wal.Balance
+	s.repo.SaveWallet(wal)
+
+	trx.Status = "SUCCESS"
+	trx.BalanceBefore = balanceBefore
+	trx.BalanceAfter = balanceAfter
+	trx.Title = strings.Replace(trx.Title, "Permintaan ", "", 1)
+	trx.Description = fmt.Sprintf("Deposit saldo telah disetujui. %s", notes)
+	if adminUser != nil {
+		trx.AdminID = adminUser.ID
+		trx.AdminEmail = adminUser.Email
+	}
+	trx.AdminNotes = notes
+	s.repo.UpdateTransaction(trx)
+
+	return trx, wal, nil
+}
+
+func (s *walletService) RejectTopUp(adminUser *supabase.User, token string, transactionCode, reason string) (*WalletTransaction, error) {
+	transactionCode = strings.TrimSpace(transactionCode)
+	if transactionCode == "" {
+		return nil, errors.New("Kode transaksi (transaction_code) wajib disertakan")
+	}
+
+	if reason == "" {
+		reason = "Ditolak oleh Admin"
+	}
+
+	// 1. Try Supabase RPC reject_app_wallet_topup
+	if s.sbClient != nil && token != "" {
+		var adminID interface{} = nil
+		if adminUser != nil && adminUser.ID != "" {
+			adminID = adminUser.ID
+		}
+		rpcPayload := map[string]interface{}{
+			"p_transaction_code": transactionCode,
+			"p_admin_id":         adminID,
+			"p_reason":           reason,
+		}
+		if respBytes, err := s.sbClient.CallRPC("reject_app_wallet_topup", rpcPayload, token); err == nil {
+			var rpcRes map[string]interface{}
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
+				trx, _ := s.repo.FindTransactionByCode(transactionCode)
+				if trx != nil {
+					trx.Status = "FAILED"
+					trx.AdminNotes = reason
+					s.repo.UpdateTransaction(trx)
+					return trx, nil
+				}
+			}
+		}
+	}
+
+	// 2. In-Memory fallback
+	trx, _ := s.repo.FindTransactionByCode(transactionCode)
+	if trx == nil {
+		return nil, fmt.Errorf("Transaksi top up '%s' tidak ditemukan", transactionCode)
+	}
+
+	if trx.Status != "PENDING" {
+		return nil, fmt.Errorf("Transaksi '%s' tidak dapat ditolak karena status saat ini adalah %s", transactionCode, trx.Status)
+	}
+
+	trx.Status = "FAILED"
+	trx.AdminNotes = reason
+	trx.Description = fmt.Sprintf("Permintaan top up ditolak. Alasan: %s", reason)
+	if adminUser != nil {
+		trx.AdminID = adminUser.ID
+		trx.AdminEmail = adminUser.Email
+	}
+	s.repo.UpdateTransaction(trx)
+
+	return trx, nil
+}
+
+func (s *walletService) ProcessTopUpCallback(req TopUpCallbackRequest) (*WalletTransaction, *Wallet, error) {
+	code := strings.TrimSpace(req.TransactionCode)
+	if code == "" && req.ReferenceID != "" {
+		code = strings.TrimSpace(req.ReferenceID)
+	}
+	if code == "" {
+		return nil, nil, errors.New("transaction_code atau reference_id wajib disertakan")
+	}
+
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status == "success" || status == "paid" || status == "settlement" {
+		return s.ApproveTopUp(nil, "", code, "Pembayaran dikonfirmasi via Webhook / Payment Gateway Callback")
+	} else if status == "failed" || status == "expired" || status == "cancelled" {
+		trx, err := s.RejectTopUp(nil, "", code, fmt.Sprintf("Pembayaran berstatus %s oleh Payment Gateway", status))
+		return trx, nil, err
+	}
+
+	return nil, nil, fmt.Errorf("Status callback '%s' tidak dikenali", status)
+}
+
+func (s *walletService) GetPendingTopUps() []*WalletTransaction {
+	return s.repo.GetPendingTopUps()
 }
 
 func (s *walletService) Refund(caller *supabase.User, token string, req RefundRequest) (*WalletTransaction, *Wallet, error) {

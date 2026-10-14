@@ -182,6 +182,84 @@
                             }
                         },
                         {
+                            "name": "Update Profile",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{auth_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"full_name\": \"Ari Wicaksono\",\n  \"phone\": \"081234567890\",\n  \"address\": \"Jl. Mawar No. 12, Jakarta\",\n  \"business_name\": \"Dewa Cellular Store\",\n  \"business_phone\": \"081234567890\",\n  \"business_address\": \"Ruko Niaga Blok A-5\",\n  \"wa_target_1\": \"081234567890\",\n  \"wa_target_2\": \"\",\n  \"wa_target_3\": \"\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/auth/profile",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "auth",
+                                        "profile"
+                                    ]
+                                },
+                                "description": "Memperbarui profil diri user yang sedang login (nama, nomor WA target, alamat bisnis)."
+                            }
+                        },
+                        {
+                            "name": "Change Password",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{auth_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"old_password\": \"123456\",\n  \"new_password\": \"UserBaru123!\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/auth/change-password",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "auth",
+                                        "change-password"
+                                    ]
+                                },
+                                "description": "Mengganti password akun sendiri untuk user yang sedang login."
+                            }
+                        },
+                        {
                             "name": "Refresh Token",
                             "request": {
                                 "method": "POST",
@@ -434,7 +512,7 @@
                             }
                         },
                         {
-                            "name": "Top Up",
+                            "name": "Request Top Up",
                             "request": {
                                 "auth": {
                                     "type": "bearer",
@@ -455,7 +533,7 @@
                                 ],
                                 "body": {
                                     "mode": "raw",
-                                    "raw": "{\n  \"amount\": 50000,\n  \"channel\": \"QRIS Instant\"\n}"
+                                    "raw": "{\n  \"amount\": 50000,\n  \"channel\": \"BCA Virtual Account\",\n  \"notes\": \"Isi saldo aplikasi\"\n}"
                                 },
                                 "url": {
                                     "raw": "{{base_url}}/api/v1/wallet/topup",
@@ -469,7 +547,37 @@
                                         "topup"
                                     ]
                                 },
-                                "description": "Melakukan deposit saldo ke dompet pengguna."
+                                "description": "Membuat permohonan deposit saldo dengan status PENDING. Saldo baru masuk setelah diverifikasi/disetujui Admin atau payment gateway callback."
+                            }
+                        },
+                        {
+                            "name": "Top Up Callback",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"transaction_code\": \"TOP-20261014-972123\",\n  \"status\": \"success\",\n  \"amount\": 50000,\n  \"channel\": \"BCA Virtual Account\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/wallet/topup/callback",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "wallet",
+                                        "topup",
+                                        "callback"
+                                    ]
+                                },
+                                "description": "Webhook endpoint untuk menerima callback notifikasi sukses dari payment gateway/partner agregator."
                             }
                         },
                         {
@@ -1155,6 +1263,120 @@
                                     ]
                                 },
                                 "description": "Melihat seluruh daftar dompet dan saldo pengguna real-time."
+                            }
+                        },
+                        {
+                            "name": "Get Pending Topups",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/wallets/topup/pending",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "wallets",
+                                        "topup",
+                                        "pending"
+                                    ]
+                                },
+                                "description": "Melihat daftar seluruh permohonan top up saldo user yang berstatus PENDING dan butuh verifikasi Admin."
+                            }
+                        },
+                        {
+                            "name": "Approve Topup",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"transaction_code\": \"TOP-20261014-972123\",\n  \"notes\": \"Pembayaran diverifikasi via mutasi bank\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/wallets/topup/approve",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "wallets",
+                                        "topup",
+                                        "approve"
+                                    ]
+                                },
+                                "description": "Super Admin menyetujui (approve) permohonan top up user sehingga saldo otomatis bertambah dan status menjadi SUCCESS."
+                            }
+                        },
+                        {
+                            "name": "Reject Topup",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{admin_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"transaction_code\": \"TOP-20261014-972123\",\n  \"reason\": \"Bukti transfer tidak valid / mutasi tidak ditemukan\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/wallets/topup/reject",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "wallets",
+                                        "topup",
+                                        "reject"
+                                    ]
+                                },
+                                "description": "Super Admin menolak (reject) permohonan top up user dengan alasan jelas, saldo user tidak bertambah."
                             }
                         },
                         {

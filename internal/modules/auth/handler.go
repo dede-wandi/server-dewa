@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dede-wandi/server-dewa/internal/domain/role"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 	"github.com/go-chi/chi/v5"
@@ -51,6 +52,9 @@ func (h *Handler) Routes() chi.Router {
 	r.Group(func(protected chi.Router) {
 		protected.Use(middleware.RequireAuth(h.sb))
 		protected.Get("/me", h.Me)
+		protected.Put("/profile", h.UpdateProfile)
+		protected.Post("/profile", h.UpdateProfile)
+		protected.Post("/change-password", h.ChangePassword)
 	})
 
 	return r
@@ -275,6 +279,23 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type UpdateProfileRequest struct {
+	FullName        string `json:"full_name,omitempty"`
+	Phone           string `json:"phone,omitempty"`
+	Address         string `json:"address,omitempty"`
+	BusinessName    string `json:"business_name,omitempty"`
+	BusinessPhone   string `json:"business_phone,omitempty"`
+	BusinessAddress string `json:"business_address,omitempty"`
+	WATarget1       string `json:"wa_target_1,omitempty"`
+	WATarget2       string `json:"wa_target_2,omitempty"`
+	WATarget3       string `json:"wa_target_3,omitempty"`
+}
+
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password,omitempty"`
+	NewPassword string `json:"new_password"`
+}
+
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user := middleware.GetUserFromContext(r.Context())
@@ -288,10 +309,211 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userRoles := user.GetRoles()
+	primaryRole := "user"
+	if len(userRoles) > 0 {
+		primaryRole = userRoles[0]
+	}
+	def := role.GlobalRegistry.Resolve(primaryRole, user.Email)
+
+	var fullName, phone, address, businessName, businessPhone, businessAddress, waTarget1, waTarget2, waTarget3 string
+	if user.UserMetadata != nil {
+		if fn, ok := user.UserMetadata["full_name"].(string); ok && fn != "" {
+			fullName = fn
+		} else if dn, ok := user.UserMetadata["display_name"].(string); ok && dn != "" {
+			fullName = dn
+		}
+		if p, ok := user.UserMetadata["phone"].(string); ok && p != "" {
+			phone = p
+		}
+		address, _ = user.UserMetadata["address"].(string)
+		businessName, _ = user.UserMetadata["business_name"].(string)
+		businessPhone, _ = user.UserMetadata["business_phone"].(string)
+		businessAddress, _ = user.UserMetadata["business_address"].(string)
+		waTarget1, _ = user.UserMetadata["wa_target_1"].(string)
+		waTarget2, _ = user.UserMetadata["wa_target_2"].(string)
+		waTarget3, _ = user.UserMetadata["wa_target_3"].(string)
+	}
+	if phone == "" && user.Phone != "" {
+		phone = user.Phone
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"user":   user,
-		"roles":  user.GetRoles(),
+		"user": map[string]interface{}{
+			"id":               user.ID,
+			"email":            user.Email,
+			"role":             string(def.Role),
+			"role_name":        def.Name,
+			"category":         string(def.Category),
+			"roles":            userRoles,
+			"full_name":        fullName,
+			"phone":            phone,
+			"address":          address,
+			"business_name":    businessName,
+			"business_phone":   businessPhone,
+			"business_address": businessAddress,
+			"wa_target_1":      waTarget1,
+			"wa_target_2":      waTarget2,
+			"wa_target_3":      waTarget3,
+			"created_at":       user.CreatedAt,
+			"user_metadata":    user.UserMetadata,
+			"app_metadata":     user.AppMetadata,
+		},
+	})
+}
+
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusUnauthorized,
+			"message": "User session not found",
+		})
+		return
+	}
+
+	var req UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": "Body request tidak valid",
+		})
+		return
+	}
+
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+
+	// Build metadata payload
+	userMeta := make(map[string]interface{})
+	if user.UserMetadata != nil {
+		for k, v := range user.UserMetadata {
+			userMeta[k] = v
+		}
+	}
+
+	if req.FullName != "" {
+		userMeta["full_name"] = strings.TrimSpace(req.FullName)
+		userMeta["display_name"] = strings.TrimSpace(req.FullName)
+	}
+	if req.Phone != "" {
+		userMeta["phone"] = strings.TrimSpace(req.Phone)
+	}
+	if req.Address != "" {
+		userMeta["address"] = strings.TrimSpace(req.Address)
+	}
+	if req.BusinessName != "" {
+		userMeta["business_name"] = strings.TrimSpace(req.BusinessName)
+	}
+	if req.BusinessPhone != "" {
+		userMeta["business_phone"] = strings.TrimSpace(req.BusinessPhone)
+	}
+	if req.BusinessAddress != "" {
+		userMeta["business_address"] = strings.TrimSpace(req.BusinessAddress)
+	}
+	if req.WATarget1 != "" {
+		userMeta["wa_target_1"] = strings.TrimSpace(req.WATarget1)
+	}
+	if req.WATarget2 != "" {
+		userMeta["wa_target_2"] = strings.TrimSpace(req.WATarget2)
+	}
+	if req.WATarget3 != "" {
+		userMeta["wa_target_3"] = strings.TrimSpace(req.WATarget3)
+	}
+
+	payload := map[string]interface{}{
+		"data": userMeta,
+	}
+
+	updatedUser, err := h.sb.UpdateUserWithToken(token, payload)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Profil berhasil diperbarui",
+		"data":    updatedUser.UserMetadata,
+	})
+}
+
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusUnauthorized,
+			"message": "User session not found",
+		})
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": "Body request tidak valid",
+		})
+		return
+	}
+
+	newPassword := strings.TrimSpace(req.NewPassword)
+	if len(newPassword) < 6 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": "Password baru minimal 6 karakter",
+		})
+		return
+	}
+
+	// Verify old password if provided
+	if req.OldPassword != "" {
+		if _, err := h.sb.SignIn(user.Email, req.OldPassword); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "error",
+				"code":    http.StatusBadRequest,
+				"message": "Password lama yang Anda masukkan salah. Silakan coba lagi.",
+			})
+			return
+		}
+	}
+
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	payload := map[string]interface{}{
+		"password": newPassword,
+	}
+
+	if _, err := h.sb.UpdateUserWithToken(token, payload); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    http.StatusBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Password berhasil diubah. Gunakan password baru Anda untuk login berikutnya.",
 	})
 }
 

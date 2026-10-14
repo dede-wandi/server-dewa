@@ -26,13 +26,17 @@ func TestTransactionOrderLifecycle(t *testing.T) {
 		Email: "user@test.com",
 	}
 
-	// 1. Top up wallet balance
-	_, _, err := walletSvc.TopUp(testUser.ID, testUser.Email, "", wallet.TopUpRequest{
+	// 1. Top up wallet balance (pending -> approved)
+	topTrx, _, err := walletSvc.TopUp(testUser.ID, testUser.Email, "", wallet.TopUpRequest{
 		Amount:  50000,
 		Channel: "Bank Transfer",
 	})
 	if err != nil {
 		t.Fatalf("failed to topup: %v", err)
+	}
+	_, _, err = walletSvc.ApproveTopUp(nil, "", topTrx.TransactionCode, "Approved in test")
+	if err != nil {
+		t.Fatalf("failed to approve topup: %v", err)
 	}
 
 	bal, err := walletSvc.GetBalance(testUser.ID, testUser.Email, "")

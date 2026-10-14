@@ -445,6 +445,57 @@ func (c *Client) GetUser(accessToken string) (*User, error) {
 	return &user, nil
 }
 
+// UpdateUserWithToken updates the current user's profile or password using their access token
+func (c *Client) UpdateUserWithToken(accessToken string, payload map[string]interface{}) (*User, error) {
+	if accessToken == "" {
+		return nil, errors.New("access token is empty")
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	reqURL := c.url + "/auth/v1/user"
+	req, err := http.NewRequest(http.MethodPut, reqURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", c.anonKey)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error updating user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var authErr AuthError
+		if err := json.Unmarshal(respBytes, &authErr); err == nil && authErr.Error() != "" {
+			return nil, &authErr
+		}
+		return nil, fmt.Errorf("update user failed with status %d: %s", resp.StatusCode, string(respBytes))
+	}
+
+	var user User
+	if err := json.Unmarshal(respBytes, &user); err != nil {
+		return nil, fmt.Errorf("failed to decode updated user: %w", err)
+	}
+
+	// Invalidate cache
+	c.tokenCache.Delete(accessToken)
+
+	return &user, nil
+}
+
 // CallRPC calls a Supabase Postgres RPC function via PostgREST
 func (c *Client) CallRPC(fnName string, payload interface{}, authToken string) ([]byte, error) {
 	var bodyReader io.Reader

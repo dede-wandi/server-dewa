@@ -21,16 +21,25 @@ func TestWalletAndPointsLifecycle(t *testing.T) {
 		t.Errorf("expected new wallet to have 0 balance and 0 points, got bal=%f, pts=%d", bal.Balance, bal.Points)
 	}
 
-	// 2. Top up Rp 100.000
-	_, wTopup, err := walletSvc.TopUp(testUserID, testEmail, "", TopUpRequest{
+	// 2. Top up Rp 100.000 (status PENDING)
+	trxTopup, _, err := walletSvc.TopUp(testUserID, testEmail, "", TopUpRequest{
 		Amount:  100000,
 		Channel: "QRIS",
 	})
 	if err != nil {
 		t.Fatalf("failed to topup: %v", err)
 	}
-	if wTopup.Balance != 100000 {
-		t.Errorf("expected balance 100000, got %f", wTopup.Balance)
+	if trxTopup.Status != "PENDING" {
+		t.Errorf("expected status PENDING, got %s", trxTopup.Status)
+	}
+
+	// Super Admin approves the top up
+	_, wApproved, err := walletSvc.ApproveTopUp(nil, "", trxTopup.TransactionCode, "Approved in test")
+	if err != nil {
+		t.Fatalf("failed to approve topup: %v", err)
+	}
+	if wApproved.Balance != 100000 {
+		t.Errorf("expected balance 100000, got %f", wApproved.Balance)
 	}
 
 	// 3. Payment Rp 25.000 (earns 1% = 250 points cashback)

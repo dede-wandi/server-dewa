@@ -62,6 +62,28 @@ type PayRequest struct {
 type TopUpRequest struct {
 	Amount  float64 `json:"amount"`
 	Channel string  `json:"channel"`
+	Notes   string  `json:"notes,omitempty"`
+}
+
+// ApproveTopUpRequest represents admin approval for pending topup
+type ApproveTopUpRequest struct {
+	TransactionCode string `json:"transaction_code"`
+	Notes           string `json:"notes,omitempty"`
+}
+
+// RejectTopUpRequest represents admin rejection for pending topup
+type RejectTopUpRequest struct {
+	TransactionCode string `json:"transaction_code"`
+	Reason          string `json:"reason,omitempty"`
+}
+
+// TopUpCallbackRequest represents webhook payload from payment gateway
+type TopUpCallbackRequest struct {
+	TransactionCode string  `json:"transaction_code"`
+	ReferenceID     string  `json:"reference_id,omitempty"`
+	Status          string  `json:"status"` // success, settlement, paid, failed, expired
+	Amount          float64 `json:"amount,omitempty"`
+	Channel         string  `json:"channel,omitempty"`
 }
 
 // RefundRequest represents a refund request for a failed/cancelled transaction
