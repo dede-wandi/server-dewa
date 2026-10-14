@@ -184,14 +184,24 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 
 	// 1. Try Supabase RPC
 	if s.sbClient != nil && token != "" {
+		// Map category to match PostgreSQL app_wallet_transactions_category_check constraint:
+		// ('TOPUP', 'PAYMENT', 'REFUND', 'ADJUSTMENT', 'TRANSFER_IN', 'TRANSFER_OUT')
+		sbCategory := "PAYMENT"
+		catUpper := strings.ToUpper(strings.TrimSpace(req.Category))
+		if catUpper == "TOPUP" || catUpper == "REFUND" || catUpper == "ADJUSTMENT" || catUpper == "TRANSFER_IN" || catUpper == "TRANSFER_OUT" {
+			sbCategory = catUpper
+		}
+
 		rpcPayload := map[string]interface{}{
 			"p_user_id":      userID,
 			"p_type":         TypeDebit,
-			"p_category":     req.Category,
+			"p_category":     sbCategory,
 			"p_amount":       req.Amount,
 			"p_title":        req.Title,
 			"p_description":  req.Description,
 			"p_reference_id": req.ReferenceID,
+			"p_admin_id":     nil,
+			"p_admin_notes":  nil,
 		}
 		if respBytes, err := s.sbClient.CallRPC("process_app_wallet_mutation", rpcPayload, token); err == nil {
 			var rpcRes map[string]interface{}
@@ -229,7 +239,12 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 				)
 
 				return trx, wal, nil
+			} else if err == nil && rpcRes["message"] != nil {
+				return nil, nil, fmt.Errorf("%v", rpcRes["message"])
 			}
+		} else {
+			// Do not fall back to in-memory if Supabase returns a business validation or RPC error
+			return nil, nil, err
 		}
 	}
 

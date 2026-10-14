@@ -535,6 +535,15 @@ func (c *Client) CallRPC(fnName string, payload interface{}, authToken string) (
 	}
 
 	if resp.StatusCode >= 400 {
+		var errObj struct {
+			Message string `json:"message"`
+			Details string `json:"details"`
+			Hint    string `json:"hint"`
+			Code    string `json:"code"`
+		}
+		if json.Unmarshal(respBytes, &errObj) == nil && errObj.Message != "" {
+			return nil, errors.New(errObj.Message)
+		}
 		return nil, fmt.Errorf("rpc %s failed (%d): %s", fnName, resp.StatusCode, string(respBytes))
 	}
 

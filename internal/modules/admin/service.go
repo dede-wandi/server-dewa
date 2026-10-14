@@ -475,6 +475,8 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 			"p_title":        title,
 			"p_description":  desc,
 			"p_reference_id": refID,
+			"p_admin_id":     adminUser.ID,
+			"p_admin_notes":  req.Notes,
 		}
 		if respBytes, err := s.sbClient.CallRPC("process_app_wallet_mutation", rpcPayload, token); err == nil {
 			var rpcRes map[string]interface{}
