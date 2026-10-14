@@ -120,19 +120,45 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListUsers returns all platform users and their wallet balances
+// ListUsers returns all platform users and their wallet balances, strictly excluding superadmin accounts
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	roleFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("role")))
+	search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("search")))
+
+	isSuperAdminRole := func(rStr string) bool {
+		clean := strings.ToLower(strings.TrimSpace(rStr))
+		return clean == "superadmin" || strings.Contains(clean, "superadmin")
+	}
 
 	// 1. Try querying real users & wallets directly from database via Supabase RPC
 	if h.sbClient != nil {
 		if dbBytes, err := h.sbClient.CallRPC("get_all_registered_users_wallets", nil, ""); err == nil && len(dbBytes) > 0 {
 			var dbUsers []map[string]interface{}
 			if err := json.Unmarshal(dbBytes, &dbUsers); err == nil && len(dbUsers) > 0 {
+				filtered := make([]map[string]interface{}, 0, len(dbUsers))
 				for _, u := range dbUsers {
 					userRole, _ := u["role"].(string)
 					userEmail, _ := u["user_email"].(string)
+
+					// Strictly exclude superadmin
+					if isSuperAdminRole(userRole) {
+						continue
+					}
+
 					def := role.GlobalRegistry.Resolve(userRole, userEmail)
+					if def.Role == role.RoleSuperAdmin {
+						continue
+					}
+
+					if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
+						continue
+					}
+					if search != "" && !strings.Contains(strings.ToLower(userEmail), search) {
+						continue
+					}
+
 					u["role"] = string(def.Role)
 					u["role_name"] = def.Name
 					u["badge_color"] = def.BadgeColor
@@ -140,11 +166,12 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 					if bal, ok := u["balance"].(float64); ok {
 						u["formatted"] = fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(bal)))
 					}
+					filtered = append(filtered, u)
 				}
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status": "success",
-					"count":  len(dbUsers),
-					"data":   dbUsers,
+					"count":  len(filtered),
+					"data":   filtered,
 				})
 				return
 			}
@@ -157,10 +184,33 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			list := make([]map[string]interface{}, 0, len(authUsers))
 			for _, u := range authUsers {
 				userRoles := u.GetRoles()
+				isSuper := false
+				for _, r := range userRoles {
+					if isSuperAdminRole(r) {
+						isSuper = true
+						break
+					}
+				}
+				if isSuper || isSuperAdminRole(u.Role) {
+					continue // Strictly exclude superadmin
+				}
+
 				primaryRole := "user"
 				if len(userRoles) > 0 {
 					primaryRole = userRoles[0]
 				}
+				def := role.GlobalRegistry.Resolve(primaryRole, u.Email)
+				if def.Role == role.RoleSuperAdmin {
+					continue // Strictly exclude superadmin
+				}
+
+				if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
+					continue
+				}
+				if search != "" && !strings.Contains(strings.ToLower(u.Email), search) {
+					continue
+				}
+
 				wal, _ := h.walletHandler.GetWalletService().GetBalance(u.ID, u.Email, "")
 				var balance float64
 				var points int64
@@ -170,7 +220,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 					points = wal.Points
 					isLocked = wal.IsLocked
 				}
-				def := role.GlobalRegistry.Resolve(primaryRole, u.Email)
+
 				list = append(list, map[string]interface{}{
 					"user_id":     u.ID,
 					"user_email":  u.Email,
@@ -199,7 +249,20 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	userList := make([]map[string]interface{}, 0, len(wallets))
 
 	for _, wal := range wallets {
+		if isSuperAdminRole(wal.Role) {
+			continue // Strictly exclude superadmin
+		}
 		def := role.GlobalRegistry.Resolve(wal.Role, wal.UserEmail)
+		if def.Role == role.RoleSuperAdmin {
+			continue // Strictly exclude superadmin
+		}
+
+		if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
+			continue
+		}
+		if search != "" && !strings.Contains(strings.ToLower(wal.UserEmail), search) {
+			continue
+		}
 
 		userList = append(userList, map[string]interface{}{
 			"user_id":     wal.UserID,
