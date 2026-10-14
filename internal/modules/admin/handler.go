@@ -123,9 +123,23 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	userList := make([]map[string]interface{}, 0, len(wallets))
 
 	for _, wal := range wallets {
+		role := wal.Role
+		if role == "" {
+			role = "user"
+			emailLower := strings.ToLower(wal.UserEmail)
+			if strings.Contains(emailLower, "superadmin") || strings.Contains(emailLower, "admin") {
+				role = "superadmin"
+			} else if strings.Contains(emailLower, "kasir") {
+				role = "kasir"
+			} else if strings.Contains(emailLower, "merchant") || strings.Contains(emailLower, "fnb") {
+				role = "fnb"
+			}
+		}
+
 		userList = append(userList, map[string]interface{}{
 			"user_id":    wal.UserID,
 			"user_email": wal.UserEmail,
+			"role":       role,
 			"balance":    wal.Balance,
 			"formatted":  fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(wal.Balance))),
 			"points":     wal.Points,

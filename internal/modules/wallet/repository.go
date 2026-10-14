@@ -60,6 +60,7 @@ func (r *MemoryRepository) seedInitialData() {
 	repoWallet := &Wallet{
 		UserID:    defaultUserID,
 		UserEmail: "user@gmail.com",
+		Role:      "user",
 		Balance:   2450000,
 		Points:    12500,
 		IsLocked:  false,
@@ -185,9 +186,20 @@ func (r *MemoryRepository) GetOrCreateWallet(userID, email string) *Wallet {
 
 	w, exists := r.wallets[userID]
 	if !exists {
+		role := "user"
+		emailLower := strings.ToLower(email)
+		if strings.Contains(emailLower, "superadmin") || strings.Contains(emailLower, "admin") {
+			role = "superadmin"
+		} else if strings.Contains(emailLower, "kasir") {
+			role = "kasir"
+		} else if strings.Contains(emailLower, "merchant") || strings.Contains(emailLower, "fnb") {
+			role = "fnb"
+		}
+
 		w = &Wallet{
 			UserID:    userID,
 			UserEmail: email,
+			Role:      role,
 			Balance:   1500000,
 			Points:    5000,
 			IsLocked:  false,

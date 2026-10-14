@@ -22,6 +22,7 @@ const (
 type Wallet struct {
 	UserID    string    `json:"user_id"`
 	UserEmail string    `json:"user_email"`
+	Role      string    `json:"role"`
 	Balance   float64   `json:"balance"`
 	Points    int64     `json:"points"`
 	IsLocked  bool      `json:"is_locked"`
