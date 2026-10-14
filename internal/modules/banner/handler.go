@@ -45,7 +45,10 @@ func (h *Handler) AdminRoutes() chi.Router {
 func (h *Handler) GetActiveBanners(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	banners, err := h.service.GetActiveBanners()
+	bType := r.URL.Query().Get("type")
+	placement := r.URL.Query().Get("placement")
+
+	banners, err := h.service.GetActiveBanners(bType, placement)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -66,7 +69,10 @@ func (h *Handler) GetActiveBanners(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetAllBanners(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	banners, err := h.service.GetAllBanners()
+	bType := r.URL.Query().Get("type")
+	placement := r.URL.Query().Get("placement")
+
+	banners, err := h.service.GetAllBanners(bType, placement)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{

@@ -7,11 +7,14 @@ type Banner struct {
 	ID          string     `json:"id"`
 	Title       string     `json:"title"`
 	Subtitle    string     `json:"subtitle"`
+	Content     string     `json:"content,omitempty"`
+	Type        string     `json:"type"`                // 'PROMO', 'INFO', 'EDUKASI', 'MAINTENANCE'
+	Placement   string     `json:"placement"`           // 'HOME_TOP', 'HOME_POPUP', 'WALLET_PAGE', 'SERVICE_PAGE'
 	Tag         string     `json:"tag"`
-	ImageURL    string     `json:"image_url,omitempty"`
+	ImageURL    string     `json:"image_url,omitempty"` // Full Graphic poster jika diisi
 	CtaText     string     `json:"cta_text"`
 	TargetURL   string     `json:"target_url"`
-	ActionType  string     `json:"action_type"` // 'navigate', 'link', 'none'
+	ActionType  string     `json:"action_type"`         // 'navigate', 'link', 'popup', 'none'
 	BgColor     string     `json:"bg_color"`
 	AccentColor string     `json:"accent_color"`
 	Icon        string     `json:"icon"`
@@ -28,6 +31,9 @@ type Banner struct {
 type CreateBannerRequest struct {
 	Title       string     `json:"title"`
 	Subtitle    string     `json:"subtitle"`
+	Content     string     `json:"content,omitempty"`
+	Type        string     `json:"type"`
+	Placement   string     `json:"placement"`
 	Tag         string     `json:"tag"`
 	ImageURL    string     `json:"image_url,omitempty"`
 	CtaText     string     `json:"cta_text"`
@@ -47,6 +53,9 @@ type CreateBannerRequest struct {
 type UpdateBannerRequest struct {
 	Title       *string    `json:"title,omitempty"`
 	Subtitle    *string    `json:"subtitle,omitempty"`
+	Content     *string    `json:"content,omitempty"`
+	Type        *string    `json:"type,omitempty"`
+	Placement   *string    `json:"placement,omitempty"`
 	Tag         *string    `json:"tag,omitempty"`
 	ImageURL    *string    `json:"image_url,omitempty"`
 	CtaText     *string    `json:"cta_text,omitempty"`

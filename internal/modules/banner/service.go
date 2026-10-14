@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,8 +25,8 @@ func newUUID() string {
 }
 
 type Service interface {
-	GetActiveBanners() ([]Banner, error)
-	GetAllBanners() ([]Banner, error)
+	GetActiveBanners(bType, placement string) ([]Banner, error)
+	GetAllBanners(bType, placement string) ([]Banner, error)
 	GetBannerByID(id string) (*Banner, error)
 	CreateBanner(req CreateBannerRequest) (*Banner, error)
 	UpdateBanner(id string, req UpdateBannerRequest) (*Banner, error)
@@ -42,9 +43,12 @@ func NewService(sbClient *supabase.Client) Service {
 	now := time.Now()
 	defaultBanners := []Banner{
 		{
-			ID:          "promo-1",
+			ID:          "a1111111-0000-0000-0000-000000000001",
 			Title:       "Pulsa & Data Murah Banget!",
 			Subtitle:    "Hemat hingga 40% semua operator",
+			Content:     "Nikmati potongan harga langsung untuk setiap pembelian pulsa reguler dan kuota data semua operator.",
+			Type:        "PROMO",
+			Placement:   "HOME_TOP",
 			Tag:         "PROMO SPESIAL",
 			CtaText:     "Beli Sekarang 🔥",
 			TargetURL:   "/service/pulsa",
@@ -59,9 +63,12 @@ func NewService(sbClient *supabase.Client) Service {
 			UpdatedAt:   now,
 		},
 		{
-			ID:          "promo-2",
+			ID:          "a1111111-0000-0000-0000-000000000002",
 			Title:       "Token PLN Bonus 5%!",
 			Subtitle:    "Transaksi instan 24 jam, tanpa antre",
+			Content:     "Beli token listrik PLN prabayar kapan saja tanpa gangguan antrean.",
+			Type:        "PROMO",
+			Placement:   "HOME_TOP",
 			Tag:         "TOKEN LISTRIK",
 			CtaText:     "Beli Token ⚡",
 			TargetURL:   "/service/pln",
@@ -76,9 +83,12 @@ func NewService(sbClient *supabase.Client) Service {
 			UpdatedAt:   now,
 		},
 		{
-			ID:          "promo-3",
+			ID:          "a1111111-0000-0000-0000-000000000003",
 			Title:       "Sayur & Buah Antar ke Pintu!",
 			Subtitle:    "Order sekarang, tiba dalam 2 jam",
+			Content:     "Belanja kebutuhan dapur sayur dan buah segar pilihan langsung dari petani mitra DewaCell Mart.",
+			Type:        "PROMO",
+			Placement:   "HOME_TOP",
 			Tag:         "GROCERIES SEGAR",
 			CtaText:     "Order Sekarang 🛒",
 			TargetURL:   "/service/groceries",
@@ -93,18 +103,41 @@ func NewService(sbClient *supabase.Client) Service {
 			UpdatedAt:   now,
 		},
 		{
-			ID:          "promo-4",
-			Title:       "Bayar Semua Tagihan di Sini!",
-			Subtitle:    "PDAM, BPJS, Internet, TV Kabel & lebih",
-			Tag:         "TAGIHAN PPOB",
-			CtaText:     "Bayar Tagihan 💳",
-			TargetURL:   "/service/bills",
+			ID:          "a1111111-0000-0000-0000-000000000004",
+			Title:       "Pemberitahuan Sistem DewaCell",
+			Subtitle:    "Dapatkan bonus poin reward untuk setiap transaksi PPOB hari ini!",
+			Content:     "Halo Mitra DewaCell! Tingkatkan terus transaksi Anda. Setiap transaksi berhasil akan otomatis memberikan DewaPoin yang dapat ditukar dengan saldo dompet.",
+			Type:        "INFO",
+			Placement:   "HOME_POPUP",
+			Tag:         "PENGUMUMAN RESMI",
+			CtaText:     "Pelajari Selengkapnya ✨",
+			TargetURL:   "/wallet-history",
+			ActionType:  "popup",
+			BgColor:     "#0284C7",
+			AccentColor: "#0369A1",
+			Icon:        "megaphone",
+			Emoji:       "📢",
+			SortOrder:   1,
+			IsActive:    true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "a1111111-0000-0000-0000-000000000005",
+			Title:       "Top Up Saldo Tanpa Biaya Admin!",
+			Subtitle:    "Gunakan metode QRIS atau Transfer Bank langsung",
+			Content:     "Isi ulang saldo dompet DewaCell bebas biaya penanganan. Saldo langsung siap dipakai belanja dan jualan.",
+			Type:        "PROMO",
+			Placement:   "WALLET_PAGE",
+			Tag:         "BEBAS BIAYA",
+			CtaText:     "Top Up Sekarang 💳",
+			TargetURL:   "/service/topup",
 			ActionType:  "navigate",
-			BgColor:     "#4C1D95",
-			AccentColor: "#7C3AED",
-			Icon:        "receipt",
-			Emoji:       "🧾",
-			SortOrder:   4,
+			BgColor:     "#059669",
+			AccentColor: "#047857",
+			Icon:        "wallet",
+			Emoji:       "💰",
+			SortOrder:   1,
 			IsActive:    true,
 			CreatedAt:   now,
 			UpdatedAt:   now,
@@ -117,33 +150,35 @@ func NewService(sbClient *supabase.Client) Service {
 	}
 }
 
-// GetActiveBanners returns only active banners ordered by sort_order ASC
-func (s *bannerService) GetActiveBanners() ([]Banner, error) {
-	// PostgREST query: is_active=eq.true&order=sort_order.asc,created_at.desc
-	queryParams := "is_active=eq.true&order=sort_order.asc,created_at.desc"
+// GetActiveBanners returns only active banners filtered by type and placement
+func (s *bannerService) GetActiveBanners(bType, placement string) ([]Banner, error) {
+	// Build PostgREST query parameters
+	var parts []string
+	parts = append(parts, "is_active=eq.true")
+
+	if placement != "" {
+		parts = append(parts, fmt.Sprintf("placement=eq.%s", url.QueryEscape(strings.ToUpper(placement))))
+	}
+	if bType != "" {
+		parts = append(parts, fmt.Sprintf("type=eq.%s", url.QueryEscape(strings.ToUpper(bType))))
+	}
+
+	parts = append(parts, "order=sort_order.asc,created_at.desc")
+	queryParams := strings.Join(parts, "&")
+
 	respBytes, err := s.sbClient.GetDB("banners", queryParams, "")
 	if err != nil {
-		log.Printf("[BannerService] DB query failed or table not ready, using fallback banners: %v", err)
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		active := make([]Banner, 0, len(s.fallback))
-		for _, b := range s.fallback {
-			if b.IsActive {
-				active = append(active, b)
-			}
-		}
-		return active, nil
+		log.Printf("[BannerService] DB query failed (%v), using filtered fallback banners", err)
+		return s.filterFallback(true, bType, placement), nil
 	}
 
 	var banners []Banner
 	if err := json.Unmarshal(respBytes, &banners); err != nil {
 		log.Printf("[BannerService] Failed to unmarshal banners: %v", err)
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		return s.fallback, nil
+		return s.filterFallback(true, bType, placement), nil
 	}
 
-	// Filter by current date if start_date/end_date set
+	// Filter by schedule date if start_date/end_date set
 	now := time.Now()
 	filtered := make([]Banner, 0, len(banners))
 	for _, b := range banners {
@@ -160,21 +195,28 @@ func (s *bannerService) GetActiveBanners() ([]Banner, error) {
 	}
 
 	if len(filtered) == 0 {
-		return s.fallback, nil
+		return s.filterFallback(true, bType, placement), nil
 	}
 
 	return filtered, nil
 }
 
 // GetAllBanners returns all banners for admin management
-func (s *bannerService) GetAllBanners() ([]Banner, error) {
-	queryParams := "order=sort_order.asc,created_at.desc"
+func (s *bannerService) GetAllBanners(bType, placement string) ([]Banner, error) {
+	var parts []string
+	if placement != "" {
+		parts = append(parts, fmt.Sprintf("placement=eq.%s", url.QueryEscape(strings.ToUpper(placement))))
+	}
+	if bType != "" {
+		parts = append(parts, fmt.Sprintf("type=eq.%s", url.QueryEscape(strings.ToUpper(bType))))
+	}
+	parts = append(parts, "order=sort_order.asc,created_at.desc")
+	queryParams := strings.Join(parts, "&")
+
 	respBytes, err := s.sbClient.GetDB("banners", queryParams, "")
 	if err != nil {
 		log.Printf("[BannerService] Admin DB query failed: %v, returning in-memory banners", err)
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		return s.fallback, nil
+		return s.filterFallback(false, bType, placement), nil
 	}
 
 	var banners []Banner
@@ -183,7 +225,7 @@ func (s *bannerService) GetAllBanners() ([]Banner, error) {
 	}
 
 	if len(banners) == 0 {
-		return s.fallback, nil
+		return s.filterFallback(false, bType, placement), nil
 	}
 
 	return banners, nil
@@ -194,7 +236,6 @@ func (s *bannerService) GetBannerByID(id string) (*Banner, error) {
 	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
 	respBytes, err := s.sbClient.GetDB("banners", queryParams, "")
 	if err != nil {
-		// Check fallback
 		s.mu.RLock()
 		defer s.mu.RUnlock()
 		for _, b := range s.fallback {
@@ -232,6 +273,16 @@ func (s *bannerService) CreateBanner(req CreateBannerRequest) (*Banner, error) {
 		isActive = *req.IsActive
 	}
 
+	bType := req.Type
+	if bType == "" {
+		bType = "PROMO"
+	}
+
+	placement := req.Placement
+	if placement == "" {
+		placement = "HOME_TOP"
+	}
+
 	actionType := req.ActionType
 	if actionType == "" {
 		actionType = "navigate"
@@ -263,6 +314,9 @@ func (s *bannerService) CreateBanner(req CreateBannerRequest) (*Banner, error) {
 		"id":           newID,
 		"title":        req.Title,
 		"subtitle":     req.Subtitle,
+		"content":      req.Content,
+		"type":         strings.ToUpper(bType),
+		"placement":    strings.ToUpper(placement),
 		"tag":          tag,
 		"image_url":    req.ImageURL,
 		"cta_text":     ctaText,
@@ -283,11 +337,13 @@ func (s *bannerService) CreateBanner(req CreateBannerRequest) (*Banner, error) {
 	respBytes, err := s.sbClient.PostDB("banners", payload, "return=representation", "")
 	if err != nil {
 		log.Printf("[BannerService] DB insert failed: %v. Simulating locally in fallback.", err)
-		// Fallback local memory
 		created := Banner{
 			ID:          newID,
 			Title:       req.Title,
 			Subtitle:    req.Subtitle,
+			Content:     req.Content,
+			Type:        strings.ToUpper(bType),
+			Placement:   strings.ToUpper(placement),
 			Tag:         tag,
 			ImageURL:    req.ImageURL,
 			CtaText:     ctaText,
@@ -329,6 +385,15 @@ func (s *bannerService) UpdateBanner(id string, req UpdateBannerRequest) (*Banne
 	}
 	if req.Subtitle != nil {
 		payload["subtitle"] = *req.Subtitle
+	}
+	if req.Content != nil {
+		payload["content"] = *req.Content
+	}
+	if req.Type != nil {
+		payload["type"] = strings.ToUpper(*req.Type)
+	}
+	if req.Placement != nil {
+		payload["placement"] = strings.ToUpper(*req.Placement)
 	}
 	if req.Tag != nil {
 		payload["tag"] = *req.Tag
@@ -383,6 +448,15 @@ func (s *bannerService) UpdateBanner(id string, req UpdateBannerRequest) (*Banne
 				}
 				if req.Subtitle != nil {
 					s.fallback[i].Subtitle = *req.Subtitle
+				}
+				if req.Content != nil {
+					s.fallback[i].Content = *req.Content
+				}
+				if req.Type != nil {
+					s.fallback[i].Type = strings.ToUpper(*req.Type)
+				}
+				if req.Placement != nil {
+					s.fallback[i].Placement = strings.ToUpper(*req.Placement)
 				}
 				if req.Tag != nil {
 					s.fallback[i].Tag = *req.Tag
@@ -456,7 +530,6 @@ func (s *bannerService) DeleteBanner(id string) error {
 		return nil
 	}
 
-	// Also remove from local fallback if present
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	newFallback := make([]Banner, 0, len(s.fallback))
@@ -468,6 +541,31 @@ func (s *bannerService) DeleteBanner(id string) error {
 	s.fallback = newFallback
 
 	return nil
+}
+
+func (s *bannerService) filterFallback(onlyActive bool, bType, placement string) []Banner {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	res := make([]Banner, 0, len(s.fallback))
+	targetType := strings.ToUpper(strings.TrimSpace(bType))
+	targetPlacement := strings.ToUpper(strings.TrimSpace(placement))
+
+	for _, b := range s.fallback {
+		if onlyActive && !b.IsActive {
+			continue
+		}
+		if targetType != "" && strings.ToUpper(b.Type) != targetType {
+			continue
+		}
+		if targetPlacement != "" && strings.ToUpper(b.Placement) != targetPlacement {
+			continue
+		}
+		res = append(res, b)
+	}
+
+	sortBanners(res)
+	return res
 }
 
 func sortBanners(b []Banner) {
