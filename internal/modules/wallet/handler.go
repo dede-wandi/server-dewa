@@ -766,6 +766,10 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 					"message":     fmt.Sprintf("Dana Rp %s atas transaksi %s berhasil di-refund!", formatRupiah(int64(amt)), req.TransactionCode),
 					"source":      "supabase_db",
 					"transaction": trx,
+					"wallet": map[string]interface{}{
+						"balance":   balAfter,
+						"formatted": fmt.Sprintf("Rp %s", formatRupiah(int64(balAfter))),
+					},
 					"target_user_wallet": map[string]interface{}{
 						"user_id":   targetUID,
 						"balance":   balAfter,
@@ -786,7 +790,9 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 
 	for uid, trxs := range h.transactions {
 		for _, t := range trxs {
-			if t.TransactionCode == req.TransactionCode || t.ID == req.TransactionCode {
+			if strings.EqualFold(t.TransactionCode, req.TransactionCode) ||
+				strings.EqualFold(t.ID, req.TransactionCode) ||
+				(t.ReferenceID != "" && strings.EqualFold(t.ReferenceID, req.TransactionCode)) {
 				origTrx = t
 				targetUserID = uid
 				break
@@ -832,7 +838,8 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 
 		// Pastikan transaksi belum pernah di-refund sebelumnya
 		for _, t := range h.transactions[targetUserID] {
-			if t.Category == CategoryRefund && t.ReferenceID == origTrx.TransactionCode {
+			if t.Category == CategoryRefund &&
+				(strings.EqualFold(t.ReferenceID, origTrx.TransactionCode) || strings.EqualFold(t.ReferenceID, origTrx.ID)) {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status":  "error",
@@ -886,6 +893,10 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 		"status":      "success",
 		"message":     fmt.Sprintf("Dana sebesar Rp %s atas transaksi %s berhasil di-refund kembali ke saldo pengguna!", formatRupiah(int64(refundAmount)), req.TransactionCode),
 		"transaction": refundTrx,
+		"wallet": map[string]interface{}{
+			"balance":   balanceAfter,
+			"formatted": fmt.Sprintf("Rp %s", formatRupiah(int64(balanceAfter))),
+		},
 		"target_user_wallet": map[string]interface{}{
 			"user_id":        targetWallet.UserID,
 			"user_email":     targetWallet.UserEmail,

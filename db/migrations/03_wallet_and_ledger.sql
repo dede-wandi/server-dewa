@@ -174,6 +174,7 @@ BEGIN
         'success', true,
         'transaction_id', v_trx_id,
         'transaction_code', v_trx_code,
+        'user_id', p_user_id,
         'type', p_type,
         'category', p_category,
         'amount', p_amount,
