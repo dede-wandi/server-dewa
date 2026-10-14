@@ -956,16 +956,16 @@
                                         {
                                             "key": "placement",
                                             "value": "HOME_TOP",
-                                            "description": "HOME_TOP | HOME_POPUP | WALLET_PAGE | SERVICE_PAGE"
+                                            "description": "Lokasi penempatan banner di aplikasi:\n- HOME_TOP: Carousel slider utama paling atas di Beranda\n- HOME_POPUP: Modal popup pengumuman yang muncul saat membuka aplikasi\n- WALLET_PAGE: Banner promo khusus di halaman dompet/saldo\n- SERVICE_PAGE: Banner di halaman katalog produk/layanan"
                                         },
                                         {
                                             "key": "type",
                                             "value": "PROMO",
-                                            "description": "PROMO | INFO | EDUKASI | MAINTENANCE"
+                                            "description": "Kategori konten banner:\n- PROMO: Penawaran diskon, cashback, flash sale pulsa/token\n- INFO: Pemberitahuan penting / pengumuman resmi dari sistem\n- EDUKASI: Tips, panduan, dan tutorial penggunaan aplikasi\n- MAINTENANCE: Informasi jadwal pemeliharaan server/fitur"
                                         }
                                     ]
                                 },
-                                "description": "Mengambil seluruh banner & promo aktif berdasarkan posisi penempatan dan tipe."
+                                "description": "### 🎯 Filter Banner & Promo Aktif (`/api/v1/banners`)\nEndpoint ini digunakan oleh aplikasi mobile DewaCell untuk mengambil banner promo yang sedang aktif (`is_active = true`) dan sesuai jadwal tayang.\n\n#### 📌 Parameter Filter (Query String):\n| Parameter | Nilai yang Diterima | Keterangan |\n| :--- | :--- | :--- |\n| `placement` | `HOME_TOP` | Slider carousel utama di halaman Beranda |\n| | `HOME_POPUP` | Popup pengumuman yang muncul saat user buka aplikasi |\n| | `WALLET_PAGE` | Banner promo isi saldo di halaman dompet |\n| | `SERVICE_PAGE` | Banner promo di halaman kategori produk |\n| `type` | `PROMO` | Konten promo diskon, flash sale, dan cashback |\n| | `INFO` | Pengumuman resmi, berita, atau informasi sistem |\n| | `EDUKASI` | Tips dan panduan jualan untuk mitra merchant |\n| | `MAINTENANCE` | Jadwal pemeliharaan server/gangguan provider |\n\n#### 💡 Contoh Penggunaan:\n* Ambil banner slider beranda: `{{base_url}}/api/v1/banners?placement=HOME_TOP`\n* Ambil popup pengumuman aplikasi: `{{base_url}}/api/v1/banners?placement=HOME_POPUP`\n* Ambil promo di halaman saldo: `{{base_url}}/api/v1/banners?placement=WALLET_PAGE`\n* Ambil gabungan kondisi: `{{base_url}}/api/v1/banners?placement=HOME_TOP&type=PROMO`"
                             }
                         },
                         {
@@ -1814,7 +1814,7 @@
                                 "method": "GET",
                                 "header": [],
                                 "url": {
-                                    "raw": "{{base_url}}/api/v1/admin/banners",
+                                    "raw": "{{base_url}}/api/v1/admin/banners?placement=HOME_TOP&type=PROMO",
                                     "host": [
                                         "{{base_url}}"
                                     ],
@@ -1823,9 +1823,21 @@
                                         "v1",
                                         "admin",
                                         "banners"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "placement",
+                                            "value": "HOME_TOP",
+                                            "description": "Filter posisi penempatan: HOME_TOP | HOME_POPUP | WALLET_PAGE | SERVICE_PAGE"
+                                        },
+                                        {
+                                            "key": "type",
+                                            "value": "PROMO",
+                                            "description": "Filter tipe banner: PROMO | INFO | EDUKASI | MAINTENANCE"
+                                        }
                                     ]
                                 },
-                                "description": "Mengambil seluruh banner promo (aktif maupun non-aktif) untuk dashboard Super Admin."
+                                "description": "### 🛠️ Kelola Seluruh Banner (Admin)\nMenampilkan seluruh daftar banner promo (termasuk yang berstatus non-aktif `is_active = false`) untuk dashboard backoffice Super Admin.\n\n#### 📌 Filter Opsional:\n* `placement`: `HOME_TOP`, `HOME_POPUP`, `WALLET_PAGE`, `SERVICE_PAGE`\n* `type`: `PROMO`, `INFO`, `EDUKASI`, `MAINTENANCE`"
                             }
                         },
                         {
@@ -1910,7 +1922,7 @@
                                         "banners"
                                     ]
                                 },
-                                "description": "Menambahkan banner promo baru ke beranda aplikasi mobile."
+                                "description": "### ➕ Tambah Banner / Promo Baru (Admin)\n\n#### 📋 Panduan Field Payload:\n| Field | Tipe | Wajib? | Keterangan |\n| :--- | :--- | :--- | :--- |\n| `title` | String | **Ya** | Judul promo atau pengumuman |\n| `subtitle` | String | Opsional | Ringkasan singkat promo |\n| `content` | String | Opsional | Teks rincian lengkap syarat & ketentuan (T&C) promo saat modal dibuka |\n| `type` | String | Opsional | `PROMO` (default), `INFO`, `EDUKASI`, `MAINTENANCE` |\n| `placement` | String | Opsional | `HOME_TOP` (default), `HOME_POPUP`, `WALLET_PAGE`, `SERVICE_PAGE` |\n| `image_url` | String | Opsional | Link gambar poster banner (jika diisi, aplikasi merender gambar poster penuh) |\n| `tag` | String | Opsional | Teks label pill (misal: 'FLASH SALE', 'PROMO SPESIAL') |\n| `cta_text` | String | Opsional | Teks tombol ajakan (misal: 'Beli Sekarang 🔥') |\n| `target_url` | String | Opsional | Rute internal (misal: `/service/pulsa`, `/wallet`) atau URL external |\n| `action_type` | String | Opsional | `navigate` (pindah rute), `link` (buka browser/WA), `popup` (buka modal T&C), `none` |\n| `bg_color` & `accent_color` | Hex String | Opsional | Warna tema background card (misal: `#FFA000`) |\n| `icon` & `emoji` | String | Opsional | Nama icon Ionicons dan emoji pemanis (misal: `phone-portrait` & `📱`) |\n| `sort_order` | Number | Opsional | Urutan prioritas tampil (angka lebih kecil = tampil paling depan) |\n| `is_active` | Boolean | Opsional | `true` untuk langsung aktifkan promo, `false` untuk simpan draft |"
                             }
                         },
                         {
