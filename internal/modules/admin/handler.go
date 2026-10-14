@@ -125,6 +125,31 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// UserListItem represents a user in the superadmin user list with fixed JSON key order
+type UserListItem struct {
+	UserID    string  `json:"user_id"`
+	UserEmail string  `json:"user_email"`
+	Role      string  `json:"role"`
+	RoleName  string  `json:"role_name"`
+	Category  string  `json:"category"`
+	Balance   float64 `json:"balance"`
+	Points    int64   `json:"points"`
+	IsLocked  bool    `json:"is_locked"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
+// UserDetailResponse represents a single user's detail with fixed JSON key order
+type UserDetailResponse struct {
+	UserID       string      `json:"user_id"`
+	UserEmail    string      `json:"user_email"`
+	Balance      float64     `json:"balance"`
+	Points       int64       `json:"points"`
+	IsLocked     bool        `json:"is_locked"`
+	UpdatedAt    string      `json:"updated_at"`
+	Transactions interface{} `json:"transactions"`
+}
+
 // ListUsers returns all platform users and their wallet balances, strictly excluding superadmin accounts
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -145,10 +170,11 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		if dbBytes, err := h.sbClient.CallRPC("get_all_registered_users_wallets", nil, token); err == nil && len(dbBytes) > 0 {
 			var dbUsers []map[string]interface{}
 			if err := json.Unmarshal(dbBytes, &dbUsers); err == nil && len(dbUsers) > 0 {
-				filtered := make([]map[string]interface{}, 0, len(dbUsers))
+				filtered := make([]UserListItem, 0, len(dbUsers))
 				for _, u := range dbUsers {
 					userRole, _ := u["role"].(string)
 					userEmail, _ := u["user_email"].(string)
+					userID, _ := u["user_id"].(string)
 
 					// Strictly exclude superadmin
 					if isSuperAdminRole(userRole) {
@@ -167,14 +193,33 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 
-					u["role"] = string(def.Role)
-					u["role_name"] = def.Name
-					u["badge_color"] = def.BadgeColor
-					u["category"] = string(def.Category)
-					if bal, ok := u["balance"].(float64); ok {
-						u["formatted"] = fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(bal)))
+					var balance float64
+					if b, ok := u["balance"].(float64); ok {
+						balance = b
 					}
-					filtered = append(filtered, u)
+					var points int64
+					if p, ok := u["points"].(float64); ok {
+						points = int64(p)
+					}
+					var isLocked bool
+					if l, ok := u["is_locked"].(bool); ok {
+						isLocked = l
+					}
+					createdAt, _ := u["created_at"].(string)
+					updatedAt, _ := u["updated_at"].(string)
+
+					filtered = append(filtered, UserListItem{
+						UserID:    userID,
+						UserEmail: userEmail,
+						Role:      string(def.Role),
+						RoleName:  def.Name,
+						Category:  string(def.Category),
+						Balance:   balance,
+						Points:    points,
+						IsLocked:  isLocked,
+						CreatedAt: createdAt,
+						UpdatedAt: updatedAt,
+					})
 				}
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status": "success",
@@ -189,7 +234,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	// 2. Query all registered users directly from Supabase Auth Admin API (100% real database users)
 	if h.sbClient != nil {
 		if authUsers, err := h.sbClient.AdminListUsers(1, 100); err == nil && len(authUsers) > 0 {
-			list := make([]map[string]interface{}, 0, len(authUsers))
+			list := make([]UserListItem, 0, len(authUsers))
 			for _, u := range authUsers {
 				userRoles := u.GetRoles()
 				isSuper := false
@@ -223,24 +268,27 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 				var balance float64
 				var points int64
 				var isLocked bool
+				var updatedAt string
 				if wal != nil {
 					balance = wal.Balance
 					points = wal.Points
 					isLocked = wal.IsLocked
+					updatedAt = wal.UpdatedAt.Format(time.RFC3339)
+				} else {
+					updatedAt = u.CreatedAt
 				}
 
-				list = append(list, map[string]interface{}{
-					"user_id":     u.ID,
-					"user_email":  u.Email,
-					"role":        string(def.Role),
-					"role_name":   def.Name,
-					"badge_color": def.BadgeColor,
-					"category":    string(def.Category),
-					"balance":     balance,
-					"formatted":   fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(balance))),
-					"points":      points,
-					"is_locked":   isLocked,
-					"created_at":  u.CreatedAt,
+				list = append(list, UserListItem{
+					UserID:    u.ID,
+					UserEmail: u.Email,
+					Role:      string(def.Role),
+					RoleName:  def.Name,
+					Category:  string(def.Category),
+					Balance:   balance,
+					Points:    points,
+					IsLocked:  isLocked,
+					CreatedAt: u.CreatedAt,
+					UpdatedAt: updatedAt,
 				})
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -254,7 +302,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Fallback to active runtime wallets (Clean OOP role resolution)
 	wallets := h.walletHandler.GetAllWallets()
-	userList := make([]map[string]interface{}, 0, len(wallets))
+	userList := make([]UserListItem, 0, len(wallets))
 
 	for _, wal := range wallets {
 		if isSuperAdminRole(wal.Role) {
@@ -272,18 +320,17 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		userList = append(userList, map[string]interface{}{
-			"user_id":     wal.UserID,
-			"user_email":  wal.UserEmail,
-			"role":        string(def.Role),
-			"role_name":   def.Name,
-			"badge_color": def.BadgeColor,
-			"category":    string(def.Category),
-			"balance":     wal.Balance,
-			"formatted":   fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(wal.Balance))),
-			"points":      wal.Points,
-			"is_locked":   wal.IsLocked,
-			"updated_at":  wal.UpdatedAt.Format(time.RFC3339),
+		userList = append(userList, UserListItem{
+			UserID:    wal.UserID,
+			UserEmail: wal.UserEmail,
+			Role:      string(def.Role),
+			RoleName:  def.Name,
+			Category:  string(def.Category),
+			Balance:   wal.Balance,
+			Points:    wal.Points,
+			IsLocked:  wal.IsLocked,
+			CreatedAt: wal.UpdatedAt.Format(time.RFC3339),
+			UpdatedAt: wal.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 
@@ -311,15 +358,14 @@ func (h *Handler) GetUserDetail(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"data": map[string]interface{}{
-			"user_id":      wal.UserID,
-			"user_email":   wal.UserEmail,
-			"balance":      wal.Balance,
-			"formatted":    fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(wal.Balance))),
-			"points":       wal.Points,
-			"is_locked":    wal.IsLocked,
-			"updated_at":   wal.UpdatedAt.Format(time.RFC3339),
-			"transactions": trxs,
+		"data": UserDetailResponse{
+			UserID:       wal.UserID,
+			UserEmail:    wal.UserEmail,
+			Balance:      wal.Balance,
+			Points:       wal.Points,
+			IsLocked:     wal.IsLocked,
+			UpdatedAt:    wal.UpdatedAt.Format(time.RFC3339),
+			Transactions: trxs,
 		},
 	})
 }

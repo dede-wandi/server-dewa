@@ -332,25 +332,33 @@ func (h *Handler) AdjustBalance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type AdminWalletUserItem struct {
+	UserID    string  `json:"user_id"`
+	UserEmail string  `json:"user_email"`
+	Balance   float64 `json:"balance"`
+	Points    int64   `json:"points"`
+	IsLocked  bool    `json:"is_locked"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
 func (h *Handler) AdminListUserWallets(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	wallets := h.walletService.GetAllWallets()
 
-	userList := make([]map[string]interface{}, 0, len(wallets))
+	userList := make([]AdminWalletUserItem, 0, len(wallets))
 	for _, wal := range wallets {
 		cleanRole := strings.ToLower(strings.TrimSpace(wal.Role))
 		if cleanRole == "superadmin" || strings.Contains(cleanRole, "superadmin") {
 			continue // Strictly exclude superadmin
 		}
 
-		userList = append(userList, map[string]interface{}{
-			"user_id":    wal.UserID,
-			"user_email": wal.UserEmail,
-			"balance":    wal.Balance,
-			"formatted":  fmt.Sprintf("Rp %s", formatRupiah(int64(wal.Balance))),
-			"points":     wal.Points,
-			"is_locked":  wal.IsLocked,
-			"updated_at": wal.UpdatedAt.Format(time.RFC3339),
+		userList = append(userList, AdminWalletUserItem{
+			UserID:    wal.UserID,
+			UserEmail: wal.UserEmail,
+			Balance:   wal.Balance,
+			Points:    wal.Points,
+			IsLocked:  wal.IsLocked,
+			UpdatedAt: wal.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 
