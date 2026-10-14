@@ -25,7 +25,25 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
 	r.Post("/login", h.Login)
+	r.Get("/login", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    401,
+			"message": "No auth credentials provided. Endpoint ini memerlukan otentikasi method POST dengan body JSON: {\"email\": \"...\", \"password\": \"...\"}",
+		})
+	})
 	r.Post("/register", h.Register)
+	r.Get("/register", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    401,
+			"message": "No auth credentials provided. Gunakan method POST untuk mendaftarkan akun.",
+		})
+	})
 	r.Post("/refresh", h.Refresh)
 
 	// Protected route (requires valid token)

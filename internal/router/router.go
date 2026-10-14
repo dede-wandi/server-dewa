@@ -44,6 +44,17 @@ func New(cfg *config.Config) *chi.Mux {
 		MaxAge:           300,
 	}))
 
+	// Custom 405 Method Not Allowed handler to always return clean JSON
+	r.MethodNotAllowed(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    401,
+			"message": "No auth credentials provided. Gunakan method yang sesuai (POST untuk login/register) dengan payload JSON.",
+		})
+	})
+
 	// Root Route - Hello World & System Status
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		var m runtime.MemStats
