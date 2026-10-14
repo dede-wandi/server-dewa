@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dede-wandi/server-dewa/internal/domain/role"
 )
 
 // Repository defines the storage contract for wallets, transactions, and points
@@ -65,20 +67,11 @@ func (r *MemoryRepository) GetOrCreateWallet(userID, email string) *Wallet {
 
 	w, exists := r.wallets[userID]
 	if !exists {
-		role := "user"
-		emailLower := strings.ToLower(email)
-		if strings.Contains(emailLower, "superadmin") || strings.Contains(emailLower, "admin") {
-			role = "superadmin"
-		} else if strings.Contains(emailLower, "kasir") {
-			role = "kasir"
-		} else if strings.Contains(emailLower, "merchant") || strings.Contains(emailLower, "fnb") {
-			role = "fnb"
-		}
-
+		def := role.GlobalRegistry.Resolve("", email)
 		w = &Wallet{
 			UserID:    userID,
 			UserEmail: email,
-			Role:      role,
+			Role:      string(def.Role),
 			Balance:   0,
 			Points:    0,
 			IsLocked:  false,

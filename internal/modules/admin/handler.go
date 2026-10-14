@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dede-wandi/server-dewa/internal/domain/role"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
@@ -64,6 +65,10 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/points/transactions", h.ListAllPointTransactions)
 	r.Get("/points/ledger", h.ListAllPointTransactions)
 	r.Post("/points/adjust", h.AdjustUserPoints)
+
+	// Business Types & Extensible Merchant Models Registry
+	r.Get("/business-types", h.ListBusinessTypes)
+	r.Get("/roles", h.ListBusinessTypes)
 
 	return r
 }
@@ -125,6 +130,13 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			var dbUsers []map[string]interface{}
 			if err := json.Unmarshal(dbBytes, &dbUsers); err == nil && len(dbUsers) > 0 {
 				for _, u := range dbUsers {
+					userRole, _ := u["role"].(string)
+					userEmail, _ := u["user_email"].(string)
+					def := role.GlobalRegistry.Resolve(userRole, userEmail)
+					u["role"] = string(def.Role)
+					u["role_name"] = def.Name
+					u["badge_color"] = def.BadgeColor
+					u["category"] = string(def.Category)
 					if bal, ok := u["balance"].(float64); ok {
 						u["formatted"] = fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(bal)))
 					}
@@ -139,33 +151,25 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Fallback to active runtime wallets (clean, zero hardcode)
+	// 2. Fallback to active runtime wallets (Clean OOP role resolution)
 	wallets := h.walletHandler.GetAllWallets()
 	userList := make([]map[string]interface{}, 0, len(wallets))
 
 	for _, wal := range wallets {
-		role := wal.Role
-		if role == "" {
-			role = "user"
-			emailLower := strings.ToLower(wal.UserEmail)
-			if strings.Contains(emailLower, "superadmin") || strings.Contains(emailLower, "admin") {
-				role = "superadmin"
-			} else if strings.Contains(emailLower, "kasir") {
-				role = "kasir"
-			} else if strings.Contains(emailLower, "merchant") || strings.Contains(emailLower, "fnb") {
-				role = "fnb"
-			}
-		}
+		def := role.GlobalRegistry.Resolve(wal.Role, wal.UserEmail)
 
 		userList = append(userList, map[string]interface{}{
-			"user_id":    wal.UserID,
-			"user_email": wal.UserEmail,
-			"role":       role,
-			"balance":    wal.Balance,
-			"formatted":  fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(wal.Balance))),
-			"points":     wal.Points,
-			"is_locked":  wal.IsLocked,
-			"updated_at": wal.UpdatedAt.Format(time.RFC3339),
+			"user_id":     wal.UserID,
+			"user_email":  wal.UserEmail,
+			"role":        string(def.Role),
+			"role_name":   def.Name,
+			"badge_color": def.BadgeColor,
+			"category":    string(def.Category),
+			"balance":     wal.Balance,
+			"formatted":   fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(wal.Balance))),
+			"points":      wal.Points,
+			"is_locked":   wal.IsLocked,
+			"updated_at":  wal.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 
@@ -442,5 +446,16 @@ func (h *Handler) AdjustUserPoints(w http.ResponseWriter, r *http.Request) {
 		"message":     fmt.Sprintf("Penyesuaian %d Poin untuk user %s berhasil diproses", req.Amount, req.TargetUserID),
 		"admin_by":    adminUser.Email,
 		"transaction": ptTrx,
+	})
+}
+
+// ListBusinessTypes returns all registered business models and roles from the OOP registry
+func (h *Handler) ListBusinessTypes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	types := role.GlobalRegistry.GetAll()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"count":  len(types),
+		"data":   types,
 	})
 }
