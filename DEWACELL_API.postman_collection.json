@@ -938,12 +938,12 @@
                     "name": "Banners",
                     "item": [
                         {
-                            "name": "Get Active Banners",
+                            "name": "Get Active Banners (Filtered by Placement & Type)",
                             "request": {
                                 "method": "GET",
                                 "header": [],
                                 "url": {
-                                    "raw": "{{base_url}}/api/v1/banners",
+                                    "raw": "{{base_url}}/api/v1/banners?placement=HOME_TOP&type=PROMO",
                                     "host": [
                                         "{{base_url}}"
                                     ],
@@ -951,9 +951,21 @@
                                         "api",
                                         "v1",
                                         "banners"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "placement",
+                                            "value": "HOME_TOP",
+                                            "description": "HOME_TOP | HOME_POPUP | WALLET_PAGE | SERVICE_PAGE"
+                                        },
+                                        {
+                                            "key": "type",
+                                            "value": "PROMO",
+                                            "description": "PROMO | INFO | EDUKASI | MAINTENANCE"
+                                        }
                                     ]
                                 },
-                                "description": "Mengambil seluruh banner & promo aktif untuk carousel/slider di beranda aplikasi mobile."
+                                "description": "Mengambil seluruh banner & promo aktif berdasarkan posisi penempatan dan tipe."
                             }
                         },
                         {
@@ -1884,7 +1896,7 @@
                                 ],
                                 "body": {
                                     "mode": "raw",
-                                    "raw": "{\n  \"title\": \"Flash Sale Gajian Hemat 50%!\",\n  \"subtitle\": \"Khusus pembelian pulsa dan token listrik malam ini\",\n  \"tag\": \"FLASH SALE\",\n  \"cta_text\": \"Serbu Promo 🔥\",\n  \"target_url\": \"/service/pulsa\",\n  \"action_type\": \"navigate\",\n  \"bg_color\": \"#DC2626\",\n  \"accent_color\": \"#B91C1C\",\n  \"icon\": \"flash\",\n  \"emoji\": \"⚡\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                                    "raw": "{\n  \"title\": \"Flash Sale Gajian Hemat 50%!\",\n  \"subtitle\": \"Khusus pembelian pulsa dan token listrik malam ini\",\n  \"content\": \"Syarat dan ketentuan promo: Berlaku untuk semua pelanggan DewaCell, maksimal 1x transaksi per akun.\",\n  \"type\": \"PROMO\",\n  \"placement\": \"HOME_TOP\",\n  \"tag\": \"FLASH SALE\",\n  \"image_url\": \"\",\n  \"cta_text\": \"Serbu Promo 🔥\",\n  \"target_url\": \"/service/pulsa\",\n  \"action_type\": \"navigate\",\n  \"bg_color\": \"#DC2626\",\n  \"accent_color\": \"#B91C1C\",\n  \"icon\": \"flash\",\n  \"emoji\": \"⚡\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
                                 },
                                 "url": {
                                     "raw": "{{base_url}}/api/v1/admin/banners",
