@@ -977,30 +977,34 @@ func (s *walletService) Transfer(caller *supabase.User, token string, req Transf
 		return nil, nil, errors.New("Tidak dapat mentransfer saldo ke akun sendiri")
 	}
 
-	var targetWallet *Wallet
-	if targetID != "" {
-		targetWallet, _ = s.repo.GetWallet(targetID)
-	}
-	if targetWallet == nil && targetEmail != "" {
-		targetWallet, _ = s.repo.FindWalletByEmail(targetEmail)
-	}
-
-	if targetWallet == nil {
-		if targetID != "" {
-			targetWallet = s.repo.GetOrCreateWallet(targetID, targetEmail)
-		} else if targetEmail != "" {
-			targetWallet = s.repo.GetOrCreateWallet("usr-"+strings.ReplaceAll(targetEmail, "@", "-at-"), targetEmail)
-		} else {
-			return nil, nil, errors.New("Tujuan transfer tidak valid. Sertakan target_user_id atau target_email penerima.")
+	if targetID == "" && targetEmail != "" {
+		if s.sbClient != nil {
+			if respBytes, err := s.sbClient.CallRPC("get_all_registered_users_wallets", nil, ""); err == nil && len(respBytes) > 0 {
+				var list []struct {
+					UserID    string `json:"user_id"`
+					UserEmail string `json:"user_email"`
+				}
+				if json.Unmarshal(respBytes, &list) == nil {
+					for _, item := range list {
+						if strings.EqualFold(item.UserEmail, targetEmail) {
+							targetID = item.UserID
+							break
+						}
+					}
+				}
+			}
+		}
+		if targetID == "" {
+			return nil, nil, fmt.Errorf("Pengguna penerima dengan email '%s' tidak terdaftar di sistem", targetEmail)
 		}
 	}
 
-	if targetWallet.UserID == caller.ID {
-		return nil, nil, errors.New("Tidak dapat mentransfer saldo ke akun sendiri")
+	if targetID == "" {
+		return nil, nil, errors.New("Tujuan transfer tidak valid. Sertakan target_user_id atau target_email penerima.")
 	}
 
-	if targetWallet.IsLocked {
-		return nil, nil, errors.New("Dompet penerima sedang dibekukan / dikunci.")
+	if targetID == caller.ID {
+		return nil, nil, errors.New("Tidak dapat mentransfer saldo ke akun sendiri")
 	}
 
 	notes := strings.TrimSpace(req.Notes)
@@ -1008,22 +1012,25 @@ func (s *walletService) Transfer(caller *supabase.User, token string, req Transf
 		notes = "Transfer saldo DewaPay"
 	}
 
-	// 3. Coba Supabase RPC jika targetID adalah UUID
-	if s.sbClient != nil && token != "" && len(targetWallet.UserID) == 36 {
+	// 3. Supabase RPC transfer_app_wallet_balance
+	if s.sbClient != nil && token != "" && len(targetID) == 36 {
 		rpcPayload := map[string]interface{}{
 			"p_sender_id":   caller.ID,
-			"p_receiver_id": targetWallet.UserID,
+			"p_receiver_id": targetID,
 			"p_amount":      req.Amount,
 			"p_notes":       notes,
 		}
 		if respBytes, err := s.sbClient.CallRPC("transfer_app_wallet_balance", rpcPayload, token); err == nil {
 			var rpcRes map[string]interface{}
 			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
-				senderWallet.Balance -= req.Amount
+				balAfter, _ := rpcRes["sender_balance_after"].(float64)
+				senderWallet.Balance = balAfter
 				s.repo.SaveWallet(senderWallet)
 
-				targetWallet.Balance += req.Amount
-				s.repo.SaveWallet(targetWallet)
+				receiverEmail, _ := rpcRes["receiver_email"].(string)
+				if receiverEmail == "" {
+					receiverEmail = targetEmail
+				}
 
 				senderTrxCode, _ := rpcRes["sender_transaction_code"].(string)
 				if senderTrxCode == "" {
@@ -1037,21 +1044,26 @@ func (s *walletService) Transfer(caller *supabase.User, token string, req Transf
 					Type:            TypeDebit,
 					Category:        CategoryTransferOut,
 					Amount:          req.Amount,
-					BalanceBefore:   senderWallet.Balance + req.Amount,
-					BalanceAfter:    senderWallet.Balance,
-					Title:           "Transfer Saldo ke " + targetWallet.UserEmail,
+					BalanceBefore:   balAfter + req.Amount,
+					BalanceAfter:    balAfter,
+					Title:           "Transfer Saldo ke " + receiverEmail,
 					Description:     notes,
-					ReferenceID:     targetWallet.UserID,
+					ReferenceID:     targetID,
 					Status:          "SUCCESS",
 					CreatedAt:       time.Now(),
 				}
 				s.repo.AddTransaction(senderTrx)
 				return senderTrx, senderWallet, nil
+			} else if err == nil && rpcRes["message"] != nil {
+				return nil, nil, fmt.Errorf("%v", rpcRes["message"])
 			}
+		} else {
+			return nil, nil, err
 		}
 	}
 
 	// 4. Memory execution fallback
+	targetWallet := s.repo.GetOrCreateWallet(targetID, targetEmail)
 	senderBalanceBefore := senderWallet.Balance
 	senderBalanceAfter := senderBalanceBefore - req.Amount
 	senderWallet.Balance = senderBalanceAfter
