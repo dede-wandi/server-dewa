@@ -132,9 +132,12 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return clean == "superadmin" || strings.Contains(clean, "superadmin")
 	}
 
+	authHeader := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
 	// 1. Try querying real users & wallets directly from database via Supabase RPC
 	if h.sbClient != nil {
-		if dbBytes, err := h.sbClient.CallRPC("get_all_registered_users_wallets", nil, ""); err == nil && len(dbBytes) > 0 {
+		if dbBytes, err := h.sbClient.CallRPC("get_all_registered_users_wallets", nil, token); err == nil && len(dbBytes) > 0 {
 			var dbUsers []map[string]interface{}
 			if err := json.Unmarshal(dbBytes, &dbUsers); err == nil && len(dbUsers) > 0 {
 				filtered := make([]map[string]interface{}, 0, len(dbUsers))
