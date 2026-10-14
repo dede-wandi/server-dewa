@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
@@ -94,5 +95,54 @@ func TestListUsersExcludesSuperAdmin(t *testing.T) {
 		if roleStr == "superadmin" || userID == "superadmin-uuid-999" || email == "superadmin@dewacell.com" {
 			t.Errorf("CRITICAL: superadmin was found in ListUsers! user: %v", u)
 		}
+	}
+}
+
+func TestSuperAdminUserControl(t *testing.T) {
+	walletHandler := wallet.NewHandler(nil)
+	walletSvc := walletHandler.GetWalletService()
+	walletSvc.TopUp("target-user-1", "original@dewacell.com", "", wallet.TopUpRequest{
+		Amount:  100000,
+		Channel: "Bank",
+	})
+
+	adminHandler := NewHandler(nil, walletHandler)
+
+	// 1. Test Reset Password
+	pwdBody := `{"password":"newsecretpassword123"}`
+	reqPwd := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/target-user-1/password", strings.NewReader(pwdBody))
+	reqPwd.Header.Set("Content-Type", "application/json")
+	rrPwd := httptest.NewRecorder()
+	adminHandler.ResetUserPassword(rrPwd, reqPwd)
+	if rrPwd.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for ResetUserPassword, got %d", rrPwd.Code)
+	}
+
+	// 2. Test Update Email
+	emailBody := `{"email":"newemail@dewacell.com"}`
+	reqEmail := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/target-user-1/email", strings.NewReader(emailBody))
+	reqEmail.Header.Set("Content-Type", "application/json")
+	rrEmail := httptest.NewRecorder()
+	adminHandler.UpdateUserEmail(rrEmail, reqEmail)
+	if rrEmail.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for UpdateUserEmail, got %d", rrEmail.Code)
+	}
+
+	// 3. Test Full Update User
+	updateBody := `{"email":"updatedfull@dewacell.com","role":"agen"}`
+	reqUpdate := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/target-user-1", strings.NewReader(updateBody))
+	reqUpdate.Header.Set("Content-Type", "application/json")
+	rrUpdate := httptest.NewRecorder()
+	adminHandler.UpdateUser(rrUpdate, reqUpdate)
+	if rrUpdate.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for UpdateUser, got %d", rrUpdate.Code)
+	}
+
+	// 4. Test Delete User
+	reqDel := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/users/target-user-1", nil)
+	rrDel := httptest.NewRecorder()
+	adminHandler.DeleteUser(rrDel, reqDel)
+	if rrDel.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for DeleteUser, got %d", rrDel.Code)
 	}
 }

@@ -20,6 +20,11 @@
 			"key": "admin_token",
 			"value": "",
 			"type": "string"
+		},
+		{
+			"key": "target_user_id",
+			"value": "",
+			"type": "string"
 		}
 	],
 	"item": [
@@ -79,8 +84,11 @@
 										"exec": [
 											"var jsonData = pm.response.json();",
 											"if (jsonData && jsonData.data && jsonData.data.access_token) {",
-											"    pm.collectionVariables.set('auth_token', jsonData.data.access_token);",
-											"    console.log('✅ Token User otomatis tersimpan di variable auth_token:', jsonData.data.access_token);",
+											"    var token = jsonData.data.access_token;",
+											"    pm.collectionVariables.set('auth_token', token);",
+											"    pm.environment.set('auth_token', token);",
+											"    pm.globals.set('auth_token', token);",
+											"    console.log('✅ Token User otomatis tersimpan:', token);",
 											"}"
 										],
 										"type": "text/javascript"
@@ -739,8 +747,11 @@
 										"exec": [
 											"var jsonData = pm.response.json();",
 											"if (jsonData && jsonData.data && jsonData.data.access_token) {",
-											"    pm.collectionVariables.set('admin_token', jsonData.data.access_token);",
-											"    console.log('👑 Token Admin otomatis tersimpan di variable admin_token:', jsonData.data.access_token);",
+											"    var token = jsonData.data.access_token;",
+											"    pm.collectionVariables.set('admin_token', token);",
+											"    pm.environment.set('admin_token', token);",
+											"    pm.globals.set('admin_token', token);",
+											"    console.log('👑 Token Admin otomatis tersimpan:', token);",
 											"}"
 										],
 										"type": "text/javascript"
@@ -816,6 +827,27 @@
 					"item": [
 						{
 							"name": "Daftar Seluruh User Terdaftar (Database Supabase)",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"var jsonData = pm.response.json();",
+											"if (jsonData && jsonData.data && jsonData.data.length > 0) {",
+											"    var firstUser = jsonData.data[0];",
+											"    var uid = firstUser.user_id || firstUser.id;",
+											"    if (uid) {",
+											"        pm.collectionVariables.set('target_user_id', uid);",
+											"        pm.environment.set('target_user_id', uid);",
+											"        pm.globals.set('target_user_id', uid);",
+											"        console.log('🎯 Target User ID otomatis diset:', uid, '(' + firstUser.user_email + ')');",
+											"    }",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
 							"request": {
 								"auth": {
 									"type": "bearer",
@@ -841,7 +873,7 @@
 										"users"
 									]
 								},
-								"description": "Membaca seluruh user terdaftar langsung dari Supabase Database & Auth beserta saldo dompet masing-masing."
+								"description": "Membaca seluruh user terdaftar langsung dari Supabase Database & Auth beserta saldo dompet masing-masing. User ID pertama otomatis tersimpan di {{target_user_id}}."
 							}
 						},
 						{
@@ -860,7 +892,7 @@
 								"method": "GET",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI",
+									"raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}",
 									"host": [
 										"{{base_url}}"
 									],
@@ -869,9 +901,131 @@
 										"v1",
 										"admin",
 										"users",
-										"USER_ID_DISINI"
+										"{{target_user_id}}"
 									]
 								}
+							}
+						},
+						{
+							"name": "Super Admin - Reset Password Pengguna",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"password\": \"password_baru_123456\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}/password",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"admin",
+										"users",
+										"{{target_user_id}}",
+										"password"
+									]
+								},
+								"description": "Super Admin berkuasa penuh mereset password akun pengguna tanpa perlu password lama."
+							}
+						},
+						{
+							"name": "Super Admin - Ubah Email Pengguna",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"userbaru@gmail.com\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}/email",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"admin",
+										"users",
+										"{{target_user_id}}",
+										"email"
+									]
+								},
+								"description": "Super Admin berkuasa penuh mengubah alamat email pengguna langsung di sistem dan database Supabase."
+							}
+						},
+						{
+							"name": "Super Admin - Edit Lengkap Pengguna (Role / Profil)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"agen_dewa@gmail.com\",\n  \"role\": \"agen\",\n  \"display_name\": \"Agen Dewa Cellular\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"admin",
+										"users",
+										"{{target_user_id}}"
+									]
+								},
+								"description": "Update komprehensif data pengguna oleh Super Admin (Email, Role, Display Name, dsb)."
 							}
 						},
 						{
@@ -890,7 +1044,7 @@
 								"method": "PUT",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI/lock",
+									"raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}/lock",
 									"host": [
 										"{{base_url}}"
 									],
@@ -899,7 +1053,7 @@
 										"v1",
 										"admin",
 										"users",
-										"USER_ID_DISINI",
+										"{{target_user_id}}",
 										"lock"
 									]
 								},
@@ -922,7 +1076,7 @@
 								"method": "PUT",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI/unlock",
+									"raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}/unlock",
 									"host": [
 										"{{base_url}}"
 									],
@@ -931,10 +1085,41 @@
 										"v1",
 										"admin",
 										"users",
-										"USER_ID_DISINI",
+										"{{target_user_id}}",
 										"unlock"
 									]
 								}
+							}
+						},
+						{
+							"name": "Super Admin - Hapus Akun Pengguna Permanen",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users/{{target_user_id}}",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"v1",
+										"admin",
+										"users",
+										"{{target_user_id}}"
+									]
+								},
+								"description": "Super Admin menghapus akun pengguna beserta saldo & riwayatnya secara permanen."
 							}
 						}
 					]

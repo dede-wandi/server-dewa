@@ -491,6 +491,84 @@ func (c *Client) AdminListUsers(page, perPage int) ([]User, error) {
 	return res.Users, nil
 }
 
+// HasSecretKey returns true if the Supabase service role secret key is present
+func (c *Client) HasSecretKey() bool {
+	return c.secretKey != ""
+}
+
+// AdminUpdateUser updates user details (password, email, metadata) in Supabase Auth via Admin API
+func (c *Client) AdminUpdateUser(userID string, payload map[string]interface{}) (*User, error) {
+	if c.secretKey == "" {
+		return nil, errors.New("supabase service role secret key is required for admin user operations")
+	}
+
+	reqURL := fmt.Sprintf("%s/auth/v1/admin/users/%s", c.url, userID)
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, reqURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	req.Header.Set("Authorization", "Bearer "+c.secretKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error updating admin user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("update admin user failed (%d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	var updatedUser User
+	if err := json.Unmarshal(respBytes, &updatedUser); err != nil {
+		return nil, fmt.Errorf("failed to decode updated user: %w", err)
+	}
+
+	return &updatedUser, nil
+}
+
+// AdminDeleteUser permanently deletes a user from Supabase Auth via Admin API
+func (c *Client) AdminDeleteUser(userID string) error {
+	if c.secretKey == "" {
+		return errors.New("supabase service role secret key is required for admin user operations")
+	}
+
+	reqURL := fmt.Sprintf("%s/auth/v1/admin/users/%s", c.url, userID)
+	req, err := http.NewRequest(http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	req.Header.Set("Authorization", "Bearer "+c.secretKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("network error deleting admin user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete admin user failed (%d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	return nil
+}
+
 // GetDB queries a table directly via Supabase PostgREST API
 func (c *Client) GetDB(table, queryParams, authToken string) ([]byte, error) {
 	reqURL := fmt.Sprintf("%s/rest/v1/%s", c.url, table)
