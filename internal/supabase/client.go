@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -36,6 +37,90 @@ type User struct {
 	UserMetadata map[string]interface{} `json:"user_metadata,omitempty"`
 	AppMetadata  map[string]interface{} `json:"app_metadata,omitempty"`
 }
+
+// GetRoles extracts all roles assigned to this user from app_metadata, user_metadata, or role field
+func (u *User) GetRoles() []string {
+	rolesMap := make(map[string]bool)
+
+	// 1. Check app_metadata["roles"]
+	if u.AppMetadata != nil {
+		extractRolesFromValue(u.AppMetadata["roles"], rolesMap)
+		extractRolesFromValue(u.AppMetadata["role"], rolesMap)
+	}
+
+	// 2. Check user_metadata["roles"]
+	if u.UserMetadata != nil {
+		extractRolesFromValue(u.UserMetadata["roles"], rolesMap)
+		extractRolesFromValue(u.UserMetadata["role"], rolesMap)
+	}
+
+	// 3. Fallback to standard Supabase role field
+	if u.Role != "" && u.Role != "authenticated" {
+		rolesMap[strings.ToLower(u.Role)] = true
+	}
+
+	// 4. Default role if empty
+	if len(rolesMap) == 0 {
+		rolesMap["user"] = true
+	}
+
+	roles := make([]string, 0, len(rolesMap))
+	for r := range rolesMap {
+		roles = append(roles, r)
+	}
+	return roles
+}
+
+func extractRolesFromValue(val interface{}, rolesMap map[string]bool) {
+	if val == nil {
+		return
+	}
+	switch v := val.(type) {
+	case string:
+		clean := strings.TrimSpace(v)
+		if clean != "" {
+			rolesMap[strings.ToLower(clean)] = true
+		}
+	case []interface{}:
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				clean := strings.TrimSpace(str)
+				if clean != "" {
+					rolesMap[strings.ToLower(clean)] = true
+				}
+			}
+		}
+	case []string:
+		for _, item := range v {
+			clean := strings.TrimSpace(item)
+			if clean != "" {
+				rolesMap[strings.ToLower(clean)] = true
+			}
+		}
+	}
+}
+
+// HasRole checks if the user possesses a specific role (case-insensitive)
+func (u *User) HasRole(role string) bool {
+	target := strings.ToLower(strings.TrimSpace(role))
+	for _, r := range u.GetRoles() {
+		if strings.ToLower(r) == target {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAnyRole checks if user possesses at least one of the specified roles
+func (u *User) HasAnyRole(roles ...string) bool {
+	for _, r := range roles {
+		if u.HasRole(r) {
+			return true
+		}
+	}
+	return false
+}
+
 
 type AuthResponse struct {
 	AccessToken  string `json:"access_token"`

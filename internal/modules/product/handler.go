@@ -20,8 +20,29 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
 	r.Get("/", h.ListSample)
+
+	// Admin-only route demonstration
+	r.Group(func(adminOnly chi.Router) {
+		adminOnly.Use(middleware.RequireRoles("admin", "superadmin"))
+		adminOnly.Post("/sync", h.SyncProducts)
+	})
+
 	return r
 }
+
+func (h *Handler) SyncProducts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":     "success",
+		"message":    "Sinkronisasi produk berhasil dijalankan oleh admin",
+		"admin_id":   user.ID,
+		"admin_role": user.GetRoles(),
+		"synced_at":  time.Now().Format(time.RFC3339),
+	})
+}
+
 
 func (h *Handler) Ping(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

@@ -56,6 +56,65 @@ func GetUserFromContext(ctx context.Context) *supabase.User {
 	return nil
 }
 
+// RequireRoles ensures that the authenticated user possesses at least one of the allowed roles
+func RequireRoles(allowedRoles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user := GetUserFromContext(r.Context())
+			if user == nil {
+				writeUnauthorized(w, "Unauthorized: Sesi autentikasi user tidak ditemukan")
+				return
+			}
+
+			if !user.HasAnyRole(allowedRoles...) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status":         "error",
+					"code":           http.StatusForbidden,
+					"message":        "Forbidden: Anda tidak memiliki role yang diizinkan untuk mengakses fitur ini",
+					"required_roles": allowedRoles,
+					"user_roles":     user.GetRoles(),
+				})
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireAllRoles ensures that the authenticated user possesses all specified roles
+func RequireAllRoles(requiredRoles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user := GetUserFromContext(r.Context())
+			if user == nil {
+				writeUnauthorized(w, "Unauthorized: Sesi autentikasi user tidak ditemukan")
+				return
+			}
+
+			for _, role := range requiredRoles {
+				if !user.HasRole(role) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"status":         "error",
+						"code":           http.StatusForbidden,
+						"message":        "Forbidden: Anda wajib memiliki semua role yang ditentukan",
+						"missing_role":   role,
+						"required_roles": requiredRoles,
+						"user_roles":     user.GetRoles(),
+					})
+					return
+				}
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func writeUnauthorized(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
@@ -65,3 +124,4 @@ func writeUnauthorized(w http.ResponseWriter, msg string) {
 		"message": msg,
 	})
 }
+

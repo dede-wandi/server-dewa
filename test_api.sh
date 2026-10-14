@@ -67,6 +67,12 @@ echo "\n6️⃣ [GET] Saldo Wallet (/api/v1/wallet/balance):"
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/v1/wallet/balance"
 echo ""
 
+# 7. Test Role-Restricted Route: /api/v1/products/sync (Wajib role 'admin' atau 'superadmin')
+echo "\n7️⃣ [POST] Akses Fitur Khusus Admin (/api/v1/products/sync):"
+SYNC_RESP=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/v1/products/sync")
+echo "$SYNC_RESP"
+
 echo "\n======================================================="
 echo "🎉 SEMUA PENGUJIAN API BERHASIL DIVERIFIKASI!"
 echo "======================================================="
+

@@ -231,5 +231,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
 		"user":   user,
+		"roles":  user.GetRoles(),
 	})
 }
+
