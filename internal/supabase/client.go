@@ -388,3 +388,48 @@ func (c *Client) GetUser(accessToken string) (*User, error) {
 
 	return &user, nil
 }
+
+// CallRPC calls a Supabase Postgres RPC function via PostgREST
+func (c *Client) CallRPC(fnName string, payload interface{}, authToken string) ([]byte, error) {
+	var bodyReader io.Reader
+	if payload != nil {
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewBuffer(bodyBytes)
+	}
+
+	reqURL := c.url + "/rest/v1/rpc/" + fnName
+	req, err := http.NewRequest(http.MethodPost, reqURL, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else if c.secretKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.secretKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+c.anonKey)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error calling rpc %s: %w", fnName, err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("rpc %s failed (%d): %s", fnName, resp.StatusCode, string(respBytes))
+	}
+
+	return respBytes, nil
+}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/dede-wandi/server-dewa/internal/config"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
+	"github.com/dede-wandi/server-dewa/internal/modules/admin"
 	"github.com/dede-wandi/server-dewa/internal/modules/auth"
 	"github.com/dede-wandi/server-dewa/internal/modules/product"
 	"github.com/dede-wandi/server-dewa/internal/modules/transaction"
@@ -122,11 +123,19 @@ func New(cfg *config.Config) *chi.Mux {
 	authHandler := auth.NewHandler(sbClient)
 	productHandler := product.NewHandler()
 	transactionHandler := transaction.NewHandler()
-	walletHandler := wallet.NewHandler()
+	walletHandler := wallet.NewHandler(sbClient)
+	adminHandler := admin.NewHandler(sbClient, walletHandler)
 
 	r.Route("/api/v1", func(api chi.Router) {
 		// Auth endpoints (public login/register/refresh, protected /me)
 		api.Mount("/auth", authHandler.Routes())
+
+		// DEDICATED SUPER ADMIN & ADMIN ENDPOINTS: Wajib login & role 'admin' / 'superadmin'
+		api.Route("/admin", func(adminRouter chi.Router) {
+			adminRouter.Use(middleware.RequireAuth(sbClient))
+			adminRouter.Use(middleware.RequireRoles("admin", "superadmin"))
+			adminRouter.Mount("/", adminHandler.Routes())
+		})
 
 		// PROTECTED MICROSERVICES: Semua modul wajib melalui autentikasi login Supabase
 		api.Group(func(protected chi.Router) {
