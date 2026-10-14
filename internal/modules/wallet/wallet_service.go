@@ -52,12 +52,14 @@ func NewWalletService(repo Repository, pointService PointService, sbClient *supa
 }
 
 func (s *walletService) GetBalance(userID, email, token string) (*Wallet, error) {
-	// 1. Try Supabase RPC get_user_wallet_info
+	// 1. Try Supabase RPCs
 	if s.sbClient != nil {
 		rpcPayload := map[string]interface{}{
 			"p_user_id": userID,
 		}
-		if respBytes, err := s.sbClient.CallRPC("get_user_wallet_info", rpcPayload, token); err == nil {
+
+		// 1a. Try admin_get_user_detail (Live in Supabase schema cache)
+		if respBytes, err := s.sbClient.CallRPC("admin_get_user_detail", rpcPayload, ""); err == nil && len(respBytes) > 0 {
 			var rpcRes map[string]interface{}
 			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["user_id"] != nil {
 				wal := s.repo.GetOrCreateWallet(userID, email)
@@ -79,6 +81,58 @@ func (s *walletService) GetBalance(userID, email, token string) (*Wallet, error)
 				}
 				s.repo.SaveWallet(wal)
 				return wal, nil
+			}
+		}
+
+		// 1b. Try get_user_wallet_info
+		if respBytes, err := s.sbClient.CallRPC("get_user_wallet_info", rpcPayload, token); err == nil && len(respBytes) > 0 {
+			var rpcRes map[string]interface{}
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["user_id"] != nil {
+				wal := s.repo.GetOrCreateWallet(userID, email)
+				if bal, ok := rpcRes["balance"].(float64); ok {
+					wal.Balance = bal
+				}
+				if pts, ok := rpcRes["points"].(float64); ok {
+					wal.Points = int64(pts)
+				}
+				if locked, ok := rpcRes["is_locked"].(bool); ok {
+					wal.IsLocked = locked
+				}
+				if isPinSet, ok := rpcRes["is_pin_set"].(bool); ok {
+					wal.IsPINSet = isPinSet
+				}
+				if pinHash, ok := rpcRes["pin_hash"].(string); ok && pinHash != "" {
+					wal.PINHash = pinHash
+					wal.IsPINSet = true
+				}
+				s.repo.SaveWallet(wal)
+				return wal, nil
+			}
+		}
+
+		// 1c. Try get_all_registered_users_wallets (Live in Supabase schema cache)
+		if respBytes, err := s.sbClient.CallRPC("get_all_registered_users_wallets", nil, ""); err == nil && len(respBytes) > 0 {
+			var list []map[string]interface{}
+			if err := json.Unmarshal(respBytes, &list); err == nil {
+				for _, item := range list {
+					if uid, ok := item["user_id"].(string); ok && strings.EqualFold(uid, userID) {
+						wal := s.repo.GetOrCreateWallet(userID, email)
+						if bal, ok := item["balance"].(float64); ok {
+							wal.Balance = bal
+						}
+						if pts, ok := item["points"].(float64); ok {
+							wal.Points = int64(pts)
+						}
+						if locked, ok := item["is_locked"].(bool); ok {
+							wal.IsLocked = locked
+						}
+						if isPinSet, ok := item["is_pin_set"].(bool); ok {
+							wal.IsPINSet = isPinSet
+						}
+						s.repo.SaveWallet(wal)
+						return wal, nil
+					}
+				}
 			}
 		}
 	}
