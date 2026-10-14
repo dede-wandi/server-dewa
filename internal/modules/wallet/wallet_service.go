@@ -43,30 +43,50 @@ func NewWalletService(repo Repository, pointService PointService, sbClient *supa
 }
 
 func (s *walletService) GetBalance(userID, email, token string) (*Wallet, error) {
-	// 1. Try Supabase RPC
-	if s.sbClient != nil && token != "" {
-		if respBytes, err := s.sbClient.CallRPC("get_app_wallet_balance", nil, token); err == nil {
+	// 1. Try Supabase RPC get_user_wallet_info
+	if s.sbClient != nil {
+		rpcPayload := map[string]interface{}{
+			"p_user_id": userID,
+		}
+		if respBytes, err := s.sbClient.CallRPC("get_user_wallet_info", rpcPayload, token); err == nil {
 			var rpcRes map[string]interface{}
-			if err := json.Unmarshal(respBytes, &rpcRes); err == nil {
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["user_id"] != nil {
+				wal := s.repo.GetOrCreateWallet(userID, email)
 				if bal, ok := rpcRes["balance"].(float64); ok {
-					wal := s.repo.GetOrCreateWallet(userID, email)
 					wal.Balance = bal
-					if pts, ok := rpcRes["points"].(float64); ok {
-						wal.Points = int64(pts)
-					}
-					s.repo.SaveWallet(wal)
-					return wal, nil
 				}
+				if pts, ok := rpcRes["points"].(float64); ok {
+					wal.Points = int64(pts)
+				}
+				if locked, ok := rpcRes["is_locked"].(bool); ok {
+					wal.IsLocked = locked
+				}
+				s.repo.SaveWallet(wal)
+				return wal, nil
 			}
 		}
 	}
 
-	// 2. In-Memory fallback
+	// 2. Realtime runtime store (clean zero-default)
 	wal := s.repo.GetOrCreateWallet(userID, email)
 	return wal, nil
 }
 
 func (s *walletService) GetHistory(userID string) []*WalletTransaction {
+	// 1. Try Supabase RPC get_user_wallet_transactions
+	if s.sbClient != nil {
+		rpcPayload := map[string]interface{}{
+			"p_user_id": userID,
+			"p_limit":   50,
+		}
+		if respBytes, err := s.sbClient.CallRPC("get_user_wallet_transactions", rpcPayload, ""); err == nil {
+			var dbTrxs []*WalletTransaction
+			if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+				return dbTrxs
+			}
+		}
+	}
+
 	return s.repo.GetTransactionsByUser(userID)
 }
 
@@ -504,6 +524,13 @@ func (s *walletService) GetUserWallet(userID string) (*Wallet, []*WalletTransact
 }
 
 func (s *walletService) SetUserLock(userID string, locked bool) (*Wallet, error) {
+	if s.sbClient != nil {
+		rpcPayload := map[string]interface{}{
+			"p_target_user_id": userID,
+			"p_locked":         locked,
+		}
+		s.sbClient.CallRPC("admin_toggle_wallet_lock", rpcPayload, "")
+	}
 	wal, err := s.repo.SetLock(userID, locked)
 	if err != nil || wal == nil {
 		return nil, errors.New("Pengguna tidak ditemukan")

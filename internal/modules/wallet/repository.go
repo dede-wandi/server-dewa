@@ -40,136 +40,15 @@ type MemoryRepository struct {
 	pointTransactions map[string][]*PointTransaction
 }
 
-// NewMemoryRepository initializes and seeds the repository with sample data
+// NewMemoryRepository initializes a clean, real-time repository without dummy data
 func NewMemoryRepository() *MemoryRepository {
-	repo := &MemoryRepository{
+	return &MemoryRepository{
 		wallets:            make(map[string]*Wallet, 16),
 		transactions:       make(map[string][]*WalletTransaction, 16),
 		transactionsByCode: make(map[string]*WalletTransaction, 64),
 		transactionOwners:  make(map[string]string, 64),
 		refundedRefs:       make(map[string]bool, 16),
 		pointTransactions:  make(map[string][]*PointTransaction, 16),
-	}
-
-	repo.seedInitialData()
-	return repo
-}
-
-func (r *MemoryRepository) seedInitialData() {
-	defaultUserID := "d4d709fb-a348-4066-a352-ee3ed0e03fa8"
-	repoWallet := &Wallet{
-		UserID:    defaultUserID,
-		UserEmail: "user@gmail.com",
-		Role:      "user",
-		Balance:   2450000,
-		Points:    12500,
-		IsLocked:  false,
-		UpdatedAt: time.Now(),
-	}
-	r.wallets[defaultUserID] = repoWallet
-
-	initialTrxs := []*WalletTransaction{
-		{
-			ID:              "trx-01",
-			TransactionCode: "TRX-20261014-998101",
-			UserID:          defaultUserID,
-			Type:            TypeDebit,
-			Category:        CategoryPayment,
-			Amount:          75000,
-			BalanceBefore:   2525000,
-			BalanceAfter:    2450000,
-			Title:           "Pembayaran Paket Data Telkomsel 50GB",
-			Description:     "Pembelian kuota internet 0812-3456-7890 melalui DewaCell PPOB",
-			ReferenceID:     "ORD-TSEL-50GB",
-			Status:          "SUCCESS",
-			CreatedAt:       time.Now().Add(-2 * time.Hour),
-		},
-		{
-			ID:              "trx-02",
-			TransactionCode: "TOP-20261014-880123",
-			UserID:          defaultUserID,
-			Type:            TypeCredit,
-			Category:        CategoryTopup,
-			Amount:          500000,
-			BalanceBefore:   2025000,
-			BalanceAfter:    2525000,
-			Title:           "Top Up Saldo via BCA Virtual Account",
-			Description:     "Deposit saldo berhasil diverifikasi otomatis oleh payment gateway",
-			ReferenceID:     "VA-BCA-880123456789",
-			Status:          "SUCCESS",
-			CreatedAt:       time.Now().Add(-5 * time.Hour),
-		},
-		{
-			ID:              "trx-03",
-			TransactionCode: "TRX-20261014-482199",
-			UserID:          defaultUserID,
-			Type:            TypeDebit,
-			Category:        CategoryPayment,
-			Amount:          201500,
-			BalanceBefore:   2226500,
-			BalanceAfter:    2025000,
-			Title:           "Pembayaran Token Listrik PLN Rp 200.000",
-			Description:     "No. Meter: 5123 4567 8901 - Sukses terbit Stroom Token",
-			ReferenceID:     "PLN-TOKEN-4821",
-			Status:          "SUCCESS",
-			CreatedAt:       time.Now().Add(-24 * time.Hour),
-		},
-	}
-
-	for _, t := range initialTrxs {
-		r.addTransactionInternal(t)
-	}
-
-	initialPoints := []*PointTransaction{
-		{
-			ID:              "pt-01",
-			TransactionCode: "PTS-20261014-101",
-			UserID:          defaultUserID,
-			Type:            PointTypeCredit,
-			Category:        PointCategoryCashback,
-			Amount:          750,
-			PointsBefore:    11750,
-			PointsAfter:     12500,
-			Title:           "Cashback Transaksi Paket Data Telkomsel",
-			Description:     "Cashback 1% otomatis dari transaksi TRX-20261014-998101",
-			ReferenceID:     "TRX-20261014-998101",
-			Status:          "SUCCESS",
-			CreatedAt:       time.Now().Add(-2 * time.Hour),
-		},
-		{
-			ID:              "pt-02",
-			TransactionCode: "PTS-20261014-102",
-			UserID:          defaultUserID,
-			Type:            PointTypeCredit,
-			Category:        PointCategoryReward,
-			Amount:          2015,
-			PointsBefore:    9735,
-			PointsAfter:     11750,
-			Title:           "Reward Transaksi Token Listrik PLN",
-			Description:     "Reward loyalty point atas pembayaran listrik",
-			ReferenceID:     "TRX-20261014-482199",
-			Status:          "SUCCESS",
-			CreatedAt:       time.Now().Add(-24 * time.Hour),
-		},
-		{
-			ID:              "pt-03",
-			TransactionCode: "PTS-20261014-103",
-			UserID:          defaultUserID,
-			Type:            PointTypeDebit,
-			Category:        PointCategoryRedeem,
-			Amount:          5000,
-			PointsBefore:    14735,
-			PointsAfter:     9735,
-			Title:           "Penukaran Diskon Belanja PPOB",
-			Description:     "Kupon potongan harga Rp 5.000 belanja DewaMart",
-			ReferenceID:     "RED-MART-5000",
-			Status:          "SUCCESS",
-			CreatedAt:       time.Now().Add(-48 * time.Hour),
-		},
-	}
-
-	for _, pt := range initialPoints {
-		r.pointTransactions[defaultUserID] = append(r.pointTransactions[defaultUserID], pt)
 	}
 }
 
@@ -200,29 +79,12 @@ func (r *MemoryRepository) GetOrCreateWallet(userID, email string) *Wallet {
 			UserID:    userID,
 			UserEmail: email,
 			Role:      role,
-			Balance:   1500000,
-			Points:    5000,
+			Balance:   0,
+			Points:    0,
 			IsLocked:  false,
 			UpdatedAt: time.Now(),
 		}
 		r.wallets[userID] = w
-
-		// Seed starter transaction
-		initTrx := &WalletTransaction{
-			ID:              "trx-init-" + userID[:8],
-			TransactionCode: "TOP-INIT-" + time.Now().Format("20060102150405"),
-			UserID:          userID,
-			Type:            TypeCredit,
-			Category:        CategoryTopup,
-			Amount:          1500000,
-			BalanceBefore:   0,
-			BalanceAfter:    1500000,
-			Title:           "Saldo Awal Registrasi Akun DewaPay",
-			Description:     "Saldo sambutan selamat datang untuk verifikasi akun & transaksi perdana",
-			Status:          "SUCCESS",
-			CreatedAt:       time.Now(),
-		}
-		r.addTransactionInternal(initTrx)
 	} else if email != "" && w.UserEmail == "" {
 		w.UserEmail = email
 	}
@@ -237,30 +99,6 @@ func (r *MemoryRepository) SaveWallet(w *Wallet) {
 }
 
 func (r *MemoryRepository) GetAllWallets() []*Wallet {
-	r.mu.Lock()
-	// Ensure standard accounts exist
-	if _, ok := r.wallets["d4d709fb-a348-4066-a352-ee3ed0e03fa8"]; !ok {
-		r.wallets["d4d709fb-a348-4066-a352-ee3ed0e03fa8"] = &Wallet{
-			UserID: "d4d709fb-a348-4066-a352-ee3ed0e03fa8", UserEmail: "user@gmail.com", Balance: 2450000, Points: 12500, UpdatedAt: time.Now(),
-		}
-	}
-	if _, ok := r.wallets["afef2ecd-e069-4a2f-b5c3-0c277ad46a8f"]; !ok {
-		r.wallets["afef2ecd-e069-4a2f-b5c3-0c277ad46a8f"] = &Wallet{
-			UserID: "afef2ecd-e069-4a2f-b5c3-0c277ad46a8f", UserEmail: "superadmin@gmail.com", Balance: 100000000, Points: 500000, UpdatedAt: time.Now(),
-		}
-	}
-	if _, ok := r.wallets["c3d809ab-b123-4567-8901-ee2ed0e03fa9"]; !ok {
-		r.wallets["c3d809ab-b123-4567-8901-ee2ed0e03fa9"] = &Wallet{
-			UserID: "c3d809ab-b123-4567-8901-ee2ed0e03fa9", UserEmail: "kasir_dewa@gmail.com", Balance: 5200000, Points: 15000, UpdatedAt: time.Now(),
-		}
-	}
-	if _, ok := r.wallets["e5f909cd-d345-6789-0123-ff4ed0e03fb1"]; !ok {
-		r.wallets["e5f909cd-d345-6789-0123-ff4ed0e03fb1"] = &Wallet{
-			UserID: "e5f909cd-d345-6789-0123-ff4ed0e03fb1", UserEmail: "merchant_fnb@gmail.com", Balance: 18450000, Points: 28000, UpdatedAt: time.Now(),
-		}
-	}
-	r.mu.Unlock()
-
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	res := make([]*Wallet, 0, len(r.wallets))

@@ -119,6 +119,27 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// 1. Try querying real users & wallets directly from database via Supabase RPC
+	if h.sbClient != nil {
+		if dbBytes, err := h.sbClient.CallRPC("get_all_registered_users_wallets", nil, ""); err == nil && len(dbBytes) > 0 {
+			var dbUsers []map[string]interface{}
+			if err := json.Unmarshal(dbBytes, &dbUsers); err == nil && len(dbUsers) > 0 {
+				for _, u := range dbUsers {
+					if bal, ok := u["balance"].(float64); ok {
+						u["formatted"] = fmt.Sprintf("Rp %s", wallet.FormatRupiah(int64(bal)))
+					}
+				}
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status": "success",
+					"count":  len(dbUsers),
+					"data":   dbUsers,
+				})
+				return
+			}
+		}
+	}
+
+	// 2. Fallback to active runtime wallets (clean, zero hardcode)
 	wallets := h.walletHandler.GetAllWallets()
 	userList := make([]map[string]interface{}, 0, len(wallets))
 
@@ -233,6 +254,21 @@ func (h *Handler) UnlockUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListAllTransactions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// 1. Try querying real ledger directly from database via Supabase RPC
+	if h.sbClient != nil {
+		if dbBytes, err := h.sbClient.CallRPC("get_all_app_transactions", map[string]interface{}{"p_limit": 200}, ""); err == nil && len(dbBytes) > 0 {
+			var dbTrxs []map[string]interface{}
+			if err := json.Unmarshal(dbBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status": "success",
+					"count":  len(dbTrxs),
+					"data":   dbTrxs,
+				})
+				return
+			}
+		}
+	}
+
 	allTrxs := h.walletHandler.GetAllTransactions()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -335,6 +371,22 @@ func (h *Handler) RemoveRole(w http.ResponseWriter, r *http.Request) {
 // ListAllPointTransactions returns all point transactions across all users
 func (h *Handler) ListAllPointTransactions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	// 1. Try querying real point ledger directly from database via Supabase RPC
+	if h.sbClient != nil {
+		if dbBytes, err := h.sbClient.CallRPC("get_all_point_transactions", map[string]interface{}{"p_limit": 200}, ""); err == nil && len(dbBytes) > 0 {
+			var dbPts []map[string]interface{}
+			if err := json.Unmarshal(dbBytes, &dbPts); err == nil && len(dbPts) > 0 {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status": "success",
+					"count":  len(dbPts),
+					"data":   dbPts,
+				})
+				return
+			}
+		}
+	}
+
 	allPts := h.walletHandler.GetAllPointTransactions()
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
