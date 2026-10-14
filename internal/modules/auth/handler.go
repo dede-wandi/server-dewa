@@ -316,7 +316,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	def := role.GlobalRegistry.Resolve(primaryRole, user.Email)
 
-	var fullName, phone, address, businessName, businessPhone, businessAddress, waTarget1, waTarget2, waTarget3 string
+	var fullName, phone, avatarURL, address, businessName, businessPhone, businessAddress, waTarget1, waTarget2, waTarget3 string
 	if user.UserMetadata != nil {
 		if fn, ok := user.UserMetadata["full_name"].(string); ok && fn != "" {
 			fullName = fn
@@ -325,6 +325,9 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		}
 		if p, ok := user.UserMetadata["phone"].(string); ok && p != "" {
 			phone = p
+		}
+		if av, ok := user.UserMetadata["avatar_url"].(string); ok {
+			avatarURL = av
 		}
 		address, _ = user.UserMetadata["address"].(string)
 		businessName, _ = user.UserMetadata["business_name"].(string)
@@ -345,10 +348,9 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 			"email":            user.Email,
 			"role":             string(def.Role),
 			"role_name":        def.Name,
-			"category":         string(def.Category),
-			"roles":            userRoles,
 			"full_name":        fullName,
 			"phone":            phone,
+			"avatar_url":       avatarURL,
 			"address":          address,
 			"business_name":    businessName,
 			"business_phone":   businessPhone,
@@ -357,8 +359,6 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 			"wa_target_2":      waTarget2,
 			"wa_target_3":      waTarget3,
 			"created_at":       user.CreatedAt,
-			"user_metadata":    user.UserMetadata,
-			"app_metadata":     user.AppMetadata,
 		},
 	})
 }

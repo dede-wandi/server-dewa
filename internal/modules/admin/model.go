@@ -33,11 +33,9 @@ type UserDetailResponse struct {
 	Balance         float64                `json:"balance"`
 	Points          int64                  `json:"points"`
 	IsLocked        bool                   `json:"is_locked"`
-	CreatedAt       string                 `json:"created_at"`
-	UpdatedAt       string                 `json:"updated_at"`
-	UserMetadata    map[string]interface{} `json:"user_metadata,omitempty"`
-	AppMetadata     map[string]interface{} `json:"app_metadata,omitempty"`
-	Transactions    interface{}            `json:"transactions"`
+	CreatedAt       string      `json:"created_at"`
+	UpdatedAt       string      `json:"updated_at"`
+	Transactions    interface{} `json:"transactions"`
 }
 
 // ResetPasswordRequest represents payload to reset user password

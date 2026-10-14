@@ -235,7 +235,6 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 	var foundUser *UserListItem
 	var transactions interface{} = []interface{}{}
 	var userMeta map[string]interface{}
-	var appMeta map[string]interface{}
 
 	// Always retrieve complete Supabase Auth User details and metadata
 	var authUser *supabase.User
@@ -272,9 +271,6 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 
 					if um, ok := u["user_metadata"].(map[string]interface{}); ok && len(um) > 0 {
 						userMeta = um
-					}
-					if am, ok := u["app_metadata"].(map[string]interface{}); ok && len(am) > 0 {
-						appMeta = am
 					}
 
 					foundUser = &UserListItem{
@@ -377,9 +373,6 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 		if len(authUser.UserMetadata) > 0 {
 			userMeta = authUser.UserMetadata
 		}
-		if len(authUser.AppMetadata) > 0 {
-			appMeta = authUser.AppMetadata
-		}
 		if authUser.Phone != "" {
 			phone = authUser.Phone
 		}
@@ -392,9 +385,6 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["user_id"] != nil {
 				if um, ok := rpcRes["user_metadata"].(map[string]interface{}); ok && len(um) > 0 {
 					userMeta = um
-				}
-				if am, ok := rpcRes["app_metadata"].(map[string]interface{}); ok && len(am) > 0 {
-					appMeta = am
 				}
 			}
 		}
@@ -438,8 +428,6 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 		IsLocked:        foundUser.IsLocked,
 		CreatedAt:       foundUser.CreatedAt,
 		UpdatedAt:       foundUser.UpdatedAt,
-		UserMetadata:    userMeta,
-		AppMetadata:     appMeta,
 		Transactions:    transactions,
 	}, nil
 }

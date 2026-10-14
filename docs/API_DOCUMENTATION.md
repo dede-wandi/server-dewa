@@ -106,13 +106,22 @@ Semua endpoint berikut telah diuji dan diverifikasi secara langsung:
 ```json
 {
   "status": "success",
-  "roles": ["admin", "cashier"],
   "user": {
     "id": "d4d709fb-a348-4066-a352-ee3ed0e03fa8",
     "email": "user@gmail.com",
-    "user_metadata": {
-      "full_name": "Ari"
-    }
+    "role": "user",
+    "role_name": "Pelanggan",
+    "full_name": "Ari",
+    "phone": "08123456789",
+    "avatar_url": "",
+    "address": "Jl. Mawar No. 10",
+    "business_name": "Dewa Cellular",
+    "business_phone": "08123456789",
+    "business_address": "Jl. Mawar No. 10",
+    "wa_target_1": "08123456789",
+    "wa_target_2": "",
+    "wa_target_3": "",
+    "created_at": "2025-10-26T16:08:28.052273Z"
   }
 }
 ```
