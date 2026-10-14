@@ -101,7 +101,8 @@ CREATE OR REPLACE FUNCTION public.admin_update_user(
     p_user_id UUID,
     p_new_email TEXT DEFAULT NULL,
     p_new_password TEXT DEFAULT NULL,
-    p_new_role TEXT DEFAULT NULL
+    p_new_role TEXT DEFAULT NULL,
+    p_user_metadata JSONB DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -148,17 +149,28 @@ BEGIN
         UPDATE auth.users
         SET 
             raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb) || jsonb_build_object('role', LOWER(TRIM(p_new_role))),
+            raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('role', LOWER(TRIM(p_new_role))),
             updated_at = NOW()
         WHERE id = p_user_id;
     END IF;
 
-    SELECT id, email, raw_app_meta_data->>'role' as role INTO v_user FROM auth.users WHERE id = p_user_id;
+    -- Update Profil & User Metadata jika diisi (nama, telepon, alamat, dsb)
+    IF p_user_metadata IS NOT NULL THEN
+        UPDATE auth.users
+        SET 
+            raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || p_user_metadata,
+            updated_at = NOW()
+        WHERE id = p_user_id;
+    END IF;
+
+    SELECT id, email, raw_app_meta_data->>'role' as role, raw_user_meta_data INTO v_user FROM auth.users WHERE id = p_user_id;
 
     RETURN jsonb_build_object(
         'success', true,
         'user_id', v_user.id,
         'email', v_user.email,
         'role', v_user.role,
+        'user_metadata', v_user.raw_user_meta_data,
         'message', 'Data pengguna berhasil diperbarui oleh Super Admin'
     );
 END;
@@ -190,11 +202,69 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. Berikan hak akses eksekusi ke anon, authenticated, dan service_role
+-- 5. FUNCTION: Super Admin Ambil Detail Lengkap Profil & Metadata User
+CREATE OR REPLACE FUNCTION public.admin_get_user_detail(p_user_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+    v_user RECORD;
+    v_wallet RECORD;
+BEGIN
+    SELECT * INTO v_user FROM auth.users WHERE id = p_user_id;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT * INTO v_wallet FROM public.app_wallets WHERE user_id = p_user_id;
+
+    RETURN jsonb_build_object(
+        'user_id', v_user.id,
+        'user_email', v_user.email,
+        'role', COALESCE(v_user.raw_app_meta_data->>'role', v_user.raw_app_meta_data->'roles'->>0, 'user'),
+        'balance', COALESCE(v_wallet.balance, 0),
+        'points', COALESCE(v_wallet.points, 0),
+        'is_locked', COALESCE(v_wallet.is_locked, false),
+        'created_at', v_user.created_at,
+        'updated_at', COALESCE(v_wallet.updated_at, v_user.created_at),
+        'user_metadata', COALESCE(v_user.raw_user_meta_data, '{}'::jsonb),
+        'app_metadata', COALESCE(v_user.raw_app_meta_data, '{}'::jsonb)
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 6. Update get_all_registered_users_wallets agar menyertakan user_metadata & app_metadata
+CREATE OR REPLACE FUNCTION public.get_all_registered_users_wallets()
+RETURNS JSONB AS $$
+DECLARE
+    v_list JSONB;
+BEGIN
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'user_id', u.id,
+            'user_email', u.email,
+            'role', COALESCE(u.raw_app_meta_data->>'role', u.raw_app_meta_data->'roles'->>0, 'user'),
+            'balance', COALESCE(w.balance, 0),
+            'points', COALESCE(w.points, 0),
+            'is_locked', COALESCE(w.is_locked, false),
+            'created_at', u.created_at,
+            'updated_at', COALESCE(w.updated_at, u.created_at),
+            'user_metadata', COALESCE(u.raw_user_meta_data, '{}'::jsonb),
+            'app_metadata', COALESCE(u.raw_app_meta_data, '{}'::jsonb)
+        ) ORDER BY u.created_at DESC
+    ) INTO v_list
+    FROM auth.users u
+    LEFT JOIN public.app_wallets w ON w.user_id = u.id;
+
+    RETURN COALESCE(v_list, '[]'::jsonb);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 7. Berikan hak akses eksekusi ke anon, authenticated, dan service_role
 GRANT EXECUTE ON FUNCTION public.admin_reset_user_password(UUID, TEXT) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_update_user_email(UUID, TEXT) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.admin_update_user(UUID, TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_update_user(UUID, TEXT, TEXT, TEXT, JSONB) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_delete_user(UUID) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_get_user_detail(UUID) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_all_registered_users_wallets() TO anon, authenticated, service_role;
 
--- 6. Reload cache schema PostgREST
+-- 8. Reload cache schema PostgREST
 NOTIFY pgrst, 'reload schema';

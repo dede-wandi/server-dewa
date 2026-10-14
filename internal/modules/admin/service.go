@@ -234,6 +234,8 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 
 	var foundUser *UserListItem
 	var transactions interface{} = []interface{}{}
+	var userMeta map[string]interface{}
+	var appMeta map[string]interface{}
 
 	// Always retrieve complete Supabase Auth User details and metadata
 	var authUser *supabase.User
@@ -267,6 +269,13 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 					}
 					createdAt, _ := u["created_at"].(string)
 					updatedAt, _ := u["updated_at"].(string)
+
+					if um, ok := u["user_metadata"].(map[string]interface{}); ok && len(um) > 0 {
+						userMeta = um
+					}
+					if am, ok := u["app_metadata"].(map[string]interface{}); ok && len(am) > 0 {
+						appMeta = am
+					}
 
 					foundUser = &UserListItem{
 						UserID:    uID,
@@ -363,31 +372,50 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 
 	// Extract full profile information from user_metadata and app_metadata
 	var fullName, phone, address, businessName, businessPhone, businessAddress, waTarget1, waTarget2, waTarget3 string
-	var userMeta map[string]interface{}
-	var appMeta map[string]interface{}
 
 	if authUser != nil {
-		userMeta = authUser.UserMetadata
-		appMeta = authUser.AppMetadata
-		phone = authUser.Phone
-
-		if userMeta != nil {
-			if fn, ok := userMeta["full_name"].(string); ok && fn != "" {
-				fullName = fn
-			} else if dn, ok := userMeta["display_name"].(string); ok && dn != "" {
-				fullName = dn
-			}
-			if p, ok := userMeta["phone"].(string); ok && p != "" {
-				phone = p
-			}
-			address, _ = userMeta["address"].(string)
-			businessName, _ = userMeta["business_name"].(string)
-			businessPhone, _ = userMeta["business_phone"].(string)
-			businessAddress, _ = userMeta["business_address"].(string)
-			waTarget1, _ = userMeta["wa_target_1"].(string)
-			waTarget2, _ = userMeta["wa_target_2"].(string)
-			waTarget3, _ = userMeta["wa_target_3"].(string)
+		if authUser.UserMetadata != nil && len(authUser.UserMetadata) > 0 {
+			userMeta = authUser.UserMetadata
 		}
+		if authUser.AppMetadata != nil && len(authUser.AppMetadata) > 0 {
+			appMeta = authUser.AppMetadata
+		}
+		if authUser.Phone != "" {
+			phone = authUser.Phone
+		}
+	}
+
+	// Fallback to admin_get_user_detail RPC if userMeta is still nil
+	if userMeta == nil && s.sbClient != nil {
+		if respBytes, err := s.sbClient.CallRPC("admin_get_user_detail", map[string]interface{}{"p_user_id": cleanID}, ""); err == nil && len(respBytes) > 0 {
+			var rpcRes map[string]interface{}
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["user_id"] != nil {
+				if um, ok := rpcRes["user_metadata"].(map[string]interface{}); ok && len(um) > 0 {
+					userMeta = um
+				}
+				if am, ok := rpcRes["app_metadata"].(map[string]interface{}); ok && len(am) > 0 {
+					appMeta = am
+				}
+			}
+		}
+	}
+
+	if userMeta != nil {
+		if fn, ok := userMeta["full_name"].(string); ok && fn != "" {
+			fullName = fn
+		} else if dn, ok := userMeta["display_name"].(string); ok && dn != "" {
+			fullName = dn
+		}
+		if p, ok := userMeta["phone"].(string); ok && p != "" {
+			phone = p
+		}
+		address, _ = userMeta["address"].(string)
+		businessName, _ = userMeta["business_name"].(string)
+		businessPhone, _ = userMeta["business_phone"].(string)
+		businessAddress, _ = userMeta["business_address"].(string)
+		waTarget1, _ = userMeta["wa_target_1"].(string)
+		waTarget2, _ = userMeta["wa_target_2"].(string)
+		waTarget3, _ = userMeta["wa_target_3"].(string)
 	}
 
 	return &UserDetailResponse{
