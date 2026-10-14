@@ -19,7 +19,6 @@ type WalletService interface {
 	TopUp(userID, email, token string, req TopUpRequest) (*WalletTransaction, *Wallet, error)
 	ApproveTopUp(adminUser *supabase.User, token string, transactionCode, notes string) (*WalletTransaction, *Wallet, error)
 	RejectTopUp(adminUser *supabase.User, token string, transactionCode, reason string) (*WalletTransaction, error)
-	ProcessTopUpCallback(req TopUpCallbackRequest) (*WalletTransaction, *Wallet, error)
 	GetPendingTopUps() []*WalletTransaction
 	Refund(caller *supabase.User, token string, req RefundRequest) (*WalletTransaction, *Wallet, error)
 	AdjustBalance(adminUser *supabase.User, token string, req AdjustRequest) (*WalletTransaction, *Wallet, error)
@@ -431,25 +430,6 @@ func (s *walletService) RejectTopUp(adminUser *supabase.User, token string, tran
 	return trx, nil
 }
 
-func (s *walletService) ProcessTopUpCallback(req TopUpCallbackRequest) (*WalletTransaction, *Wallet, error) {
-	code := strings.TrimSpace(req.TransactionCode)
-	if code == "" && req.ReferenceID != "" {
-		code = strings.TrimSpace(req.ReferenceID)
-	}
-	if code == "" {
-		return nil, nil, errors.New("transaction_code atau reference_id wajib disertakan")
-	}
-
-	status := strings.ToLower(strings.TrimSpace(req.Status))
-	if status == "success" || status == "paid" || status == "settlement" {
-		return s.ApproveTopUp(nil, "", code, "Pembayaran dikonfirmasi via Webhook / Payment Gateway Callback")
-	} else if status == "failed" || status == "expired" || status == "cancelled" {
-		trx, err := s.RejectTopUp(nil, "", code, fmt.Sprintf("Pembayaran berstatus %s oleh Payment Gateway", status))
-		return trx, nil, err
-	}
-
-	return nil, nil, fmt.Errorf("Status callback '%s' tidak dikenali", status)
-}
 
 func (s *walletService) GetPendingTopUps() []*WalletTransaction {
 	return s.repo.GetPendingTopUps()

@@ -550,36 +550,7 @@
                                 "description": "Membuat permohonan deposit saldo dengan status PENDING. Saldo baru masuk setelah diverifikasi/disetujui Admin atau payment gateway callback."
                             }
                         },
-                        {
-                            "name": "Top Up Callback",
-                            "request": {
-                                "method": "POST",
-                                "header": [
-                                    {
-                                        "key": "Content-Type",
-                                        "value": "application/json"
-                                    }
-                                ],
-                                "body": {
-                                    "mode": "raw",
-                                    "raw": "{\n  \"transaction_code\": \"TOP-20261014-972123\",\n  \"status\": \"success\",\n  \"amount\": 50000,\n  \"channel\": \"BCA Virtual Account\"\n}"
-                                },
-                                "url": {
-                                    "raw": "{{base_url}}/api/v1/wallet/topup/callback",
-                                    "host": [
-                                        "{{base_url}}"
-                                    ],
-                                    "path": [
-                                        "api",
-                                        "v1",
-                                        "wallet",
-                                        "topup",
-                                        "callback"
-                                    ]
-                                },
-                                "description": "Webhook endpoint untuk menerima callback notifikasi sukses dari payment gateway/partner agregator."
-                            }
-                        },
+
                         {
                             "name": "Pay",
                             "request": {

@@ -46,10 +46,9 @@ func (h *Handler) GetPointService() PointService {
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	// Public ping/info/callback
+	// Public ping/info
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
-	r.Post("/topup/callback", h.TopUpCallback)
 
 	// User endpoints (requires login token)
 	r.Get("/balance", h.GetBalance)
@@ -353,45 +352,6 @@ func (h *Handler) RejectTopUp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) TopUpCallback(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	var req TopUpCallbackRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "error",
-			"message": "Payload callback tidak valid: JSON diperlukan",
-		})
-		return
-	}
-
-	trx, targetWallet, err := h.walletService.ProcessTopUpCallback(req)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "error",
-			"message": err.Error(),
-		})
-		return
-	}
-
-	res := map[string]interface{}{
-		"status":      "success",
-		"message":     "Callback pembayaran top up berhasil diproses",
-		"transaction": trx,
-	}
-	if targetWallet != nil {
-		res["target_user_wallet"] = map[string]interface{}{
-			"user_id":       targetWallet.UserID,
-			"user_email":    targetWallet.UserEmail,
-			"balance_after": targetWallet.Balance,
-			"formatted":     fmt.Sprintf("Rp %s", formatRupiah(int64(targetWallet.Balance))),
-		}
-	}
-
-	json.NewEncoder(w).Encode(res)
-}
 
 func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
