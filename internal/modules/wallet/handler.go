@@ -348,7 +348,8 @@ func (h *Handler) AdminListUserWallets(w http.ResponseWriter, r *http.Request) {
 	userList := make([]AdminWalletUserItem, 0, len(wallets))
 	for _, wal := range wallets {
 		cleanRole := strings.ToLower(strings.TrimSpace(wal.Role))
-		if cleanRole == "superadmin" || strings.Contains(cleanRole, "superadmin") {
+		cleanEmail := strings.ToLower(strings.TrimSpace(wal.UserEmail))
+		if cleanRole == "superadmin" || strings.Contains(cleanRole, "superadmin") || strings.Contains(cleanEmail, "superadmin") {
 			continue // Strictly exclude superadmin
 		}
 

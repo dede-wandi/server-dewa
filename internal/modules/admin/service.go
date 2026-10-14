@@ -39,9 +39,17 @@ func NewService(repo Repository, walletHandler *wallet.Handler) Service {
 	}
 }
 
-func isSuperAdminRole(rStr string) bool {
-	clean := strings.ToLower(strings.TrimSpace(rStr))
-	return clean == "superadmin" || strings.Contains(clean, "superadmin")
+func isSuperAdminUser(rStr, emailStr string) bool {
+	cleanRole := strings.ToLower(strings.TrimSpace(rStr))
+	cleanEmail := strings.ToLower(strings.TrimSpace(emailStr))
+
+	if cleanRole == "superadmin" || strings.Contains(cleanRole, "superadmin") {
+		return true
+	}
+	if strings.HasPrefix(cleanEmail, "superadmin") || strings.Contains(cleanEmail, "superadmin") {
+		return true
+	}
+	return false
 }
 
 func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListItem, error) {
@@ -54,7 +62,7 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 				userEmail, _ := u["user_email"].(string)
 				userID, _ := u["user_id"].(string)
 
-				if isSuperAdminRole(userRole) {
+				if isSuperAdminUser(userRole, userEmail) {
 					continue
 				}
 
@@ -105,15 +113,19 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 		if authUsers, err := s.repo.FetchAuthAdminUsers(1, 100); err == nil && len(authUsers) > 0 {
 			list := make([]UserListItem, 0, len(authUsers))
 			for _, u := range authUsers {
+				if isSuperAdminUser(u.Role, u.Email) {
+					continue
+				}
+
 				userRoles := u.GetRoles()
 				isSuper := false
 				for _, r := range userRoles {
-					if isSuperAdminRole(r) {
+					if isSuperAdminUser(r, u.Email) {
 						isSuper = true
 						break
 					}
 				}
-				if isSuper || isSuperAdminRole(u.Role) {
+				if isSuper {
 					continue
 				}
 
@@ -174,7 +186,7 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 		userList := make([]UserListItem, 0, len(wallets))
 
 		for _, wal := range wallets {
-			if isSuperAdminRole(wal.Role) {
+			if isSuperAdminUser(wal.Role, wal.UserEmail) {
 				continue
 			}
 			def := role.GlobalRegistry.Resolve(wal.Role, wal.UserEmail)
