@@ -452,6 +452,13 @@ func (h *Handler) AdjustUserPoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TargetUserID == "" && req.UserID != "" {
+		req.TargetUserID = req.UserID
+	}
+	if paramID := chi.URLParam(r, "id"); paramID != "" && req.TargetUserID == "" {
+		req.TargetUserID = paramID
+	}
+
 	if req.TargetUserID == "" || req.Amount <= 0 || strings.TrimSpace(req.Reason) == "" {
 		http.Error(w, `{"status":"error","message":"target_user_id, amount > 0, dan reason wajib diisi"}`, http.StatusBadRequest)
 		return
@@ -509,6 +516,9 @@ func (h *Handler) AdminTopUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TargetUserID == "" && req.UserID != "" {
+		req.TargetUserID = req.UserID
+	}
 	// URL param fallback if endpoint is /users/{id}/topup
 	paramID := chi.URLParam(r, "id")
 	if paramID != "" && req.TargetUserID == "" {

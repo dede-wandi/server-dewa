@@ -255,6 +255,13 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TargetUserID == "" && req.UserID != "" {
+		req.TargetUserID = req.UserID
+	}
+	if paramID := chi.URLParam(r, "id"); paramID != "" && req.TargetUserID == "" {
+		req.TargetUserID = paramID
+	}
+
 	authHeader := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 
@@ -298,6 +305,13 @@ func (h *Handler) AdjustBalance(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"status":"error","message":"Invalid request body"}`, http.StatusBadRequest)
 		return
+	}
+
+	if req.TargetUserID == "" && req.UserID != "" {
+		req.TargetUserID = req.UserID
+	}
+	if paramID := chi.URLParam(r, "id"); paramID != "" && req.TargetUserID == "" {
+		req.TargetUserID = paramID
 	}
 
 	authHeader := r.Header.Get("Authorization")

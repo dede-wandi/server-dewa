@@ -70,11 +70,13 @@ type RefundRequest struct {
 	Amount          float64 `json:"amount,omitempty"`
 	Reason          string  `json:"reason"`
 	TargetUserID    string  `json:"target_user_id,omitempty"`
+	UserID          string  `json:"user_id,omitempty"`
 }
 
 // AdjustRequest represents an administrative balance adjustment
 type AdjustRequest struct {
 	TargetUserID string  `json:"target_user_id"`
+	UserID       string  `json:"user_id,omitempty"`
 	Type         string  `json:"type"`   // CREDIT or DEBIT
 	Amount       float64 `json:"amount"` // Nominal uang
 	Reason       string  `json:"reason"` // Alasan koreksi (wajib)

@@ -374,10 +374,10 @@ func (s *adminService) GetUserDetail(userID string) (*UserDetailResponse, error)
 	var fullName, phone, address, businessName, businessPhone, businessAddress, waTarget1, waTarget2, waTarget3 string
 
 	if authUser != nil {
-		if authUser.UserMetadata != nil && len(authUser.UserMetadata) > 0 {
+		if len(authUser.UserMetadata) > 0 {
 			userMeta = authUser.UserMetadata
 		}
-		if authUser.AppMetadata != nil && len(authUser.AppMetadata) > 0 {
+		if len(authUser.AppMetadata) > 0 {
 			appMeta = authUser.AppMetadata
 		}
 		if authUser.Phone != "" {

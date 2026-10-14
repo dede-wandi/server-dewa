@@ -73,6 +73,7 @@ type UpdateUserRequest struct {
 // AdminTopUpRequest represents payload for Super Admin to top up user balance
 type AdminTopUpRequest struct {
 	TargetUserID string  `json:"target_user_id"`
+	UserID       string  `json:"user_id,omitempty"`
 	Amount       float64 `json:"amount"`
 	Channel      string  `json:"channel,omitempty"`
 	Title        string  `json:"title,omitempty"`
@@ -89,6 +90,7 @@ type RoleAssignRequest struct {
 // AdjustPointsRequest represents payload to adjust user loyalty points
 type AdjustPointsRequest struct {
 	TargetUserID string `json:"target_user_id"`
+	UserID       string `json:"user_id,omitempty"`
 	Type         string `json:"type"`   // CREDIT or DEBIT
 	Amount       int64  `json:"amount"` // Jumlah poin
 	Reason       string `json:"reason"` // Alasan
