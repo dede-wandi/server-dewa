@@ -684,13 +684,14 @@ type RefundRequest struct {
 	TransactionCode string  `json:"transaction_code"`
 	Amount          float64 `json:"amount,omitempty"`
 	Reason          string  `json:"reason"`
+	TargetUserID    string  `json:"target_user_id,omitempty"`
 }
 
 // Refund refunds a failed/cancelled transaction
 func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user := middleware.GetUserFromContext(r.Context())
-	if user == nil {
+	caller := middleware.GetUserFromContext(r.Context())
+	if caller == nil {
 		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
@@ -701,17 +702,20 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.TransactionCode) == "" {
+	req.TransactionCode = strings.TrimSpace(req.TransactionCode)
+	if req.TransactionCode == "" {
 		http.Error(w, `{"status":"error","message":"Kode transaksi (transaction_code) wajib disertakan"}`, http.StatusBadRequest)
 		return
 	}
 
-	reason := req.Reason
-	if strings.TrimSpace(reason) == "" {
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
 		reason = "Transaksi gagal diproses oleh sistem / provider partner"
 	}
 
-	// Coba panggil RPC Supabase jika database function sudah ada
+	isAdmin := caller.HasAnyRole("admin", "superadmin")
+
+	// 1. Coba panggil RPC Supabase jika database function sudah ada
 	authHeader := r.Header.Get("Authorization")
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if h.sbClient != nil && token != "" {
@@ -722,39 +726,50 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 		if respBytes, err := h.sbClient.CallRPC("refund_app_wallet_transaction", rpcPayload, token); err == nil {
 			var rpcRes map[string]interface{}
 			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
-				h.mu.Lock()
-				wallet := h.getOrCreateWalletLocked(user.ID, user.Email)
-				balAfter, _ := rpcRes["balance_after"].(float64)
-				wallet.Balance = balAfter
-				wallet.UpdatedAt = time.Now()
-
 				trxCode, _ := rpcRes["transaction_code"].(string)
+				balAfter, _ := rpcRes["balance_after"].(float64)
+				balBefore, _ := rpcRes["balance_before"].(float64)
+				amt, _ := rpcRes["amount"].(float64)
+				targetUID, _ := rpcRes["user_id"].(string)
+				if targetUID == "" {
+					targetUID = caller.ID
+				}
+
+				h.mu.Lock()
+				targetWallet := h.getOrCreateWalletLocked(targetUID, "")
+				targetWallet.Balance = balAfter
+				targetWallet.UpdatedAt = time.Now()
+
 				trx := &WalletTransaction{
 					ID:              fmt.Sprintf("%v", rpcRes["transaction_id"]),
 					TransactionCode: trxCode,
-					UserID:          user.ID,
+					UserID:          targetUID,
 					Type:            TypeCredit,
 					Category:        CategoryRefund,
-					Amount:          rpcRes["amount"].(float64),
-					BalanceBefore:   rpcRes["balance_before"].(float64),
+					Amount:          amt,
+					BalanceBefore:   balBefore,
 					BalanceAfter:    balAfter,
 					Title:           rpcRes["title"].(string),
 					Description:     rpcRes["description"].(string),
 					ReferenceID:     req.TransactionCode,
+					AdminID:         caller.ID,
+					AdminEmail:      caller.Email,
+					AdminNotes:      reason,
 					Status:          "SUCCESS",
 					CreatedAt:       time.Now(),
 				}
-				h.transactions[user.ID] = append([]*WalletTransaction{trx}, h.transactions[user.ID]...)
+				h.transactions[targetUID] = append([]*WalletTransaction{trx}, h.transactions[targetUID]...)
 				h.mu.Unlock()
 
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status":      "success",
-					"message":     "Dana berhasil dikembalikan (refund) ke saldo akun pengguna via Supabase DB!",
+					"message":     fmt.Sprintf("Dana Rp %s atas transaksi %s berhasil di-refund!", formatRupiah(int64(amt)), req.TransactionCode),
 					"source":      "supabase_db",
 					"transaction": trx,
-					"wallet": map[string]interface{}{
-						"balance":   wallet.Balance,
-						"formatted": fmt.Sprintf("Rp %s", formatRupiah(int64(wallet.Balance))),
+					"target_user_wallet": map[string]interface{}{
+						"user_id":   targetUID,
+						"balance":   balAfter,
+						"formatted": fmt.Sprintf("Rp %s", formatRupiah(int64(balAfter))),
 					},
 				})
 				return
@@ -762,49 +777,94 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 2. Fallback in-memory: Cari transaksi asli di SELURUH TRANSAKSI (lintas pengguna)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	userTrxs := h.transactions[user.ID]
 	var origTrx *WalletTransaction
-	for _, t := range userTrxs {
-		if t.TransactionCode == req.TransactionCode {
-			origTrx = t
+	var targetUserID string
+
+	for uid, trxs := range h.transactions {
+		for _, t := range trxs {
+			if t.TransactionCode == req.TransactionCode || t.ID == req.TransactionCode {
+				origTrx = t
+				targetUserID = uid
+				break
+			}
+		}
+		if origTrx != nil {
 			break
 		}
 	}
 
+	// Jika pemanggil bukan admin, pastikan transaksi milik dia sendiri
+	if !isAdmin && origTrx != nil && targetUserID != caller.ID {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"code":    403,
+			"message": "Anda tidak memiliki izin untuk me-refund transaksi milik pengguna lain",
+		})
+		return
+	}
+
+	// Tentukan target user ID jika transaksi tidak ditemukan di memori
+	if targetUserID == "" {
+		if req.TargetUserID != "" {
+			targetUserID = req.TargetUserID
+		} else {
+			targetUserID = caller.ID
+		}
+	}
+
+	// Validasi & ambil nominal refund
 	refundAmount := req.Amount
 	origTitle := req.TransactionCode
 	if origTrx != nil {
 		if origTrx.Type != TypeDebit {
-			http.Error(w, `{"status":"error","message":"Hanya transaksi DEBIT (pembayaran) yang dapat di-refund"}`, http.StatusBadRequest)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "error",
+				"message": "Hanya transaksi DEBIT (pembayaran/pengeluaran) yang dapat di-refund",
+			})
 			return
 		}
-		for _, t := range userTrxs {
+
+		// Pastikan transaksi belum pernah di-refund sebelumnya
+		for _, t := range h.transactions[targetUserID] {
 			if t.Category == CategoryRefund && t.ReferenceID == origTrx.TransactionCode {
-				http.Error(w, `{"status":"error","message":"Transaksi ini sudah pernah di-refund sebelumnya"}`, http.StatusBadRequest)
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status":  "error",
+					"message": fmt.Sprintf("Transaksi %s sudah pernah di-refund sebelumnya!", origTrx.TransactionCode),
+				})
 				return
 			}
 		}
+
 		refundAmount = origTrx.Amount
 		origTitle = origTrx.Title
 	} else if refundAmount <= 0 {
-		http.Error(w, `{"status":"error","message":"Transaksi tidak ditemukan dan nominal refund tidak diisi"}`, http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": fmt.Sprintf("Transaksi '%s' tidak ditemukan di buku besar dan nominal refund tidak diisi.", req.TransactionCode),
+		})
 		return
 	}
 
-	wallet := h.getOrCreateWalletLocked(user.ID, user.Email)
-	balanceBefore := wallet.Balance
-	wallet.Balance += refundAmount
-	balanceAfter := wallet.Balance
-	wallet.UpdatedAt = time.Now()
+	// KREDITKAN KEMBALI UANG KE SALDO TARGET USER
+	targetWallet := h.getOrCreateWalletLocked(targetUserID, "")
+	balanceBefore := targetWallet.Balance
+	targetWallet.Balance += refundAmount
+	balanceAfter := targetWallet.Balance
+	targetWallet.UpdatedAt = time.Now()
 
 	refundCode := fmt.Sprintf("REF-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
 	refundTrx := &WalletTransaction{
 		ID:              fmt.Sprintf("ref-%d", time.Now().UnixNano()),
 		TransactionCode: refundCode,
-		UserID:          user.ID,
+		UserID:          targetUserID,
 		Type:            TypeCredit,
 		Category:        CategoryRefund,
 		Amount:          refundAmount,
@@ -813,19 +873,25 @@ func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 		Title:           fmt.Sprintf("Refund Dana: %s", origTitle),
 		Description:     fmt.Sprintf("Pengembalian dana saldo atas transaksi %s. Alasan: %s", req.TransactionCode, reason),
 		ReferenceID:     req.TransactionCode,
+		AdminID:         caller.ID,
+		AdminEmail:      caller.Email,
+		AdminNotes:      reason,
 		Status:          "SUCCESS",
 		CreatedAt:       time.Now(),
 	}
 
-	h.transactions[user.ID] = append([]*WalletTransaction{refundTrx}, h.transactions[user.ID]...)
+	h.transactions[targetUserID] = append([]*WalletTransaction{refundTrx}, h.transactions[targetUserID]...)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":      "success",
-		"message":     "Dana berhasil dikembalikan (refund) ke saldo akun pengguna!",
+		"message":     fmt.Sprintf("Dana sebesar Rp %s atas transaksi %s berhasil di-refund kembali ke saldo pengguna!", formatRupiah(int64(refundAmount)), req.TransactionCode),
 		"transaction": refundTrx,
-		"wallet": map[string]interface{}{
-			"balance":   wallet.Balance,
-			"formatted": fmt.Sprintf("Rp %s", formatRupiah(int64(wallet.Balance))),
+		"target_user_wallet": map[string]interface{}{
+			"user_id":        targetWallet.UserID,
+			"user_email":     targetWallet.UserEmail,
+			"balance_before": balanceBefore,
+			"balance_after":  balanceAfter,
+			"formatted":      fmt.Sprintf("Rp %s", formatRupiah(int64(balanceAfter))),
 		},
 	})
 }
