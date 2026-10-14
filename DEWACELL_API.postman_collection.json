@@ -618,44 +618,6 @@
                                 },
                                 "description": "Memotong saldo pengguna untuk pembayaran belanja atau tagihan."
                             }
-                        },
-                        {
-                            "name": "Refund",
-                            "request": {
-                                "auth": {
-                                    "type": "bearer",
-                                    "bearer": [
-                                        {
-                                            "key": "token",
-                                            "value": "{{auth_token}}",
-                                            "type": "string"
-                                        }
-                                    ]
-                                },
-                                "method": "POST",
-                                "header": [
-                                    {
-                                        "key": "Content-Type",
-                                        "value": "application/json"
-                                    }
-                                ],
-                                "body": {
-                                    "mode": "raw",
-                                    "raw": "{\n  \"transaction_code\": \"TRX-20261014-XXXXXX\",\n  \"reason\": \"Gagal proses di provider (Pengembalian Dana Otomatis)\"\n}"
-                                },
-                                "url": {
-                                    "raw": "{{base_url}}/api/v1/wallet/refund",
-                                    "host": [
-                                        "{{base_url}}"
-                                    ],
-                                    "path": [
-                                        "api",
-                                        "v1",
-                                        "wallet",
-                                        "refund"
-                                    ]
-                                }
-                            }
                         }
                     ]
                 },

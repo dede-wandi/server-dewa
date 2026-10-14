@@ -57,7 +57,6 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/transactions", h.GetHistory)
 	r.Post("/pay", h.Pay)
 	r.Post("/topup", h.TopUp)
-	r.Post("/refund", h.Refund)
 
 	// Points endpoints (requires login token)
 	r.Get("/points", h.GetPointHistory)
