@@ -1,8 +1,8 @@
 {
 	"info": {
-		"_postman_id": "dewacell-microservice-v2",
+		"_postman_id": "dewacell-microservice-v2-structured",
 		"name": "DEWACELL Production API Collection",
-		"description": "Koleksi API resmi DewaCell Golang Server: Auth, PPOB Products, Wallets, Points Loyalty, Order Transactions, dan Admin Operations. Bersih, OOP Clean Architecture, dan hemat resource server.",
+		"description": "Koleksi API DewaCell Golang Server terstruktur rapi: Folder Khusus User & Merchant Apps vs Folder Khusus Super Admin Backoffice.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -24,10 +24,10 @@
 	],
 	"item": [
 		{
-			"name": "00 - System & Status",
+			"name": "00 - SYSTEM & PUBLIC (Monitoring)",
 			"item": [
 				{
-					"name": "Root Ping (Hello World)",
+					"name": "Root Ping (Hello World - Server OK)",
 					"request": {
 						"method": "GET",
 						"header": [],
@@ -36,11 +36,11 @@
 							"host": ["{{base_url}}"],
 							"path": [""]
 						},
-						"description": "Endpoint root yang aman dan sederhana. Hanya mengembalikan Hello World! server OK."
+						"description": "Menampilkan status server 'Hello World! server OK' sederhana tanpa membocorkan info internal."
 					}
 				},
 				{
-					"name": "Healthcheck",
+					"name": "Healthcheck Server",
 					"request": {
 						"method": "GET",
 						"header": [],
@@ -49,706 +49,841 @@
 							"host": ["{{base_url}}"],
 							"path": ["health"]
 						},
-						"description": "Monitoring status kesehatan server dan uptime Docker container."
+						"description": "Pemeriksaan kesehatan container Docker dan status runtime."
 					}
 				}
-			]
+			],
+			"description": "Endpoint umum untuk monitoring status server dan pengecekan uptime tanpa otentikasi."
 		},
 		{
-			"name": "01 - Authentication",
+			"name": "01 - USER & MERCHANT APPS (Aplikasi Pelanggan & Merchant)",
+			"description": "Seluruh endpoint yang digunakan oleh Aplikasi Mobile / Web Pelanggan & Mitra Merchant (Auth, Katalog, Dompet, Poin, Order Transaksi).",
 			"item": [
 				{
-					"name": "Login (Auto Save Token)",
-					"event": [
+					"name": "1.1 Auth & Akun Pelanggan",
+					"item": [
 						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData && jsonData.data && jsonData.data.access_token) {",
-									"    pm.collectionVariables.set('auth_token', jsonData.data.access_token);",
-									"    console.log('Token otomatis disimpan ke variable auth_token:', jsonData.data.access_token);",
-									"}"
+							"name": "Login User (Auto-Save Token)",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"var jsonData = pm.response.json();",
+											"if (jsonData && jsonData.data && jsonData.data.access_token) {",
+											"    pm.collectionVariables.set('auth_token', jsonData.data.access_token);",
+											"    console.log('✅ Token User otomatis tersimpan di variable auth_token:', jsonData.data.access_token);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
 								],
-								"type": "text/javascript"
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"user@gmail.com\",\n  \"password\": \"123456\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/auth/login",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "auth", "login"]
+								},
+								"description": "Login akun pelanggan/merchant. Token JWT akan otomatis tersimpan di variabel koleksi {{auth_token}}."
 							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
+						},
+						{
+							"name": "Register Akun Baru",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"pelangganbaru@gmail.com\",\n  \"password\": \"123456\",\n  \"data\": {\n    \"full_name\": \"Pelanggan Setia DewaCell\",\n    \"phone\": \"081234567890\"\n  }\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/auth/register",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "auth", "register"]
+								},
+								"description": "Pendaftaran akun pelanggan atau merchant langsung ke database Supabase."
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"user@gmail.com\",\n  \"password\": \"123456\"\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/login",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "login"]
-						},
-						"description": "Login via Supabase Auth. Script otomatis menyimpan access_token ke variable collection {{auth_token}}."
-					}
-				},
-				{
-					"name": "Register",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
+						{
+							"name": "Get Profil Akun Saya (/me)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/auth/me",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "auth", "me"]
+								},
+								"description": "Melihat detail profil user login, metadata nama/telepon, dan role aktif."
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"userbaru@gmail.com\",\n  \"password\": \"123456\",\n  \"data\": {\n    \"full_name\": \"User Baru DewaCell\",\n    \"phone\": \"081234567890\"\n  }\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/register",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "register"]
-						},
-						"description": "Pendaftaran akun baru langsung ke Supabase Auth."
-					}
-				},
-				{
-					"name": "Get Current Profile (Me)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
+						{
+							"name": "Refresh Access Token",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"refresh_token\": \"MASUKKAN_REFRESH_TOKEN\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/auth/refresh",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "auth", "refresh"]
 								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/me",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "me"]
-						},
-						"description": "Melihat data user yang sedang login beserta roles dan metadatanya."
-					}
-				},
-				{
-					"name": "Refresh Token",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"refresh_token\": \"MASUKKAN_REFRESH_TOKEN\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/refresh",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "refresh"]
 						}
-					}
+					]
 				},
 				{
-					"name": "Ping Auth Service",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/ping",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "auth", "ping"]
+					"name": "1.2 Katalog Produk Digital & PPOB",
+					"item": [
+						{
+							"name": "Lihat Semua Produk (Katalog)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/products",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "products"]
+								},
+								"description": "Mengambil katalog produk digital (pulsa, data, pln, emoney, game). Kecepatan sub-millisecond dengan in-memory cache."
+							}
+						},
+						{
+							"name": "Filter Produk per Kategori (pulsa, data, pln)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/products?category=pulsa",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "products"],
+									"query": [
+										{
+											"key": "category",
+											"value": "pulsa"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Filter Produk per Brand (Telkomsel, Indosat, PLN)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/products?brand=Telkomsel",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "products"],
+									"query": [
+										{
+											"key": "brand",
+											"value": "Telkomsel"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Pencarian Produk (Search)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/products?search=10.000",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "products"],
+									"query": [
+										{
+											"key": "search",
+											"value": "10.000"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Detail Produk Berdasarkan Kode (TSEL10)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/products/TSEL10",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "products", "TSEL10"]
+								}
+							}
+						},
+						{
+							"name": "Daftar Kategori Produk",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/products/categories",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "products", "categories"]
+								}
+							}
+						},
+						{
+							"name": "Daftar Brand per Kategori",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/products/brands?category=pulsa",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "products", "brands"],
+									"query": [
+										{
+											"key": "category",
+											"value": "pulsa"
+										}
+									]
+								}
+							}
 						}
-					}
+					]
+				},
+				{
+					"name": "1.3 Dompet & Saldo (Wallet)",
+					"item": [
+						{
+							"name": "Cek Saldo & Poin Saya",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/wallet/balance",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "wallet", "balance"]
+								},
+								"description": "Mengambil saldo uang dan poin user secara realtime dari database Supabase."
+							}
+						},
+						{
+							"name": "Riwayat Mutasi Saldo (History)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/wallet/history",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "wallet", "history"]
+								},
+								"description": "Menampilkan seluruh mutasi masuk/keluar (Top Up, Pembayaran, Refund)."
+							}
+						},
+						{
+							"name": "Top Up Saldo",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"amount\": 50000,\n  \"channel\": \"QRIS Instant\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/wallet/topup",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "wallet", "topup"]
+								},
+								"description": "Melakukan deposit saldo ke dompet pengguna."
+							}
+						},
+						{
+							"name": "Bayar / Potong Saldo (Payment)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"amount\": 11250,\n  \"title\": \"Pembayaran Pulsa Telkomsel 10K\",\n  \"description\": \"Nomor tujuan 081234567890\",\n  \"category\": \"PAYMENT\",\n  \"reference_id\": \"REF-001\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/wallet/pay",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "wallet", "pay"]
+								},
+								"description": "Memotong saldo pengguna untuk pembayaran belanja atau tagihan."
+							}
+						},
+						{
+							"name": "Refund Transaksi",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"transaction_code\": \"TRX-20261014-XXXXXX\",\n  \"reason\": \"Gagal proses di provider (Pengembalian Dana Otomatis)\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/wallet/refund",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "wallet", "refund"]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "1.4 DewaPoin Loyalty Rewards",
+					"item": [
+						{
+							"name": "Riwayat Mutasi Poin (Cashback & Penukaran)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/wallet/points/history",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "wallet", "points", "history"]
+								},
+								"description": "Melihat detail poin masuk (Cashback 1% belanja) dan poin keluar."
+							}
+						},
+						{
+							"name": "Tukar Poin Jadi Diskon (Redeem Points)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"amount\": 100,\n  \"description\": \"Tukar 100 DewaPoin jadi voucher belanja\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/wallet/points/redeem",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "wallet", "points", "redeem"]
+								},
+								"description": "Menukar DewaPoin menjadi voucher potongan harga atau saldo."
+							}
+						}
+					]
+				},
+				{
+					"name": "1.5 Transaksi & Order PPOB Digital",
+					"item": [
+						{
+							"name": "Order / Beli Produk Digital (Pulsa, PLN, dll)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"product_code\": \"TSEL10\",\n  \"target_account\": \"081234567890\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/transactions/order",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "transactions", "order"]
+								},
+								"description": "Alur transaksi atomik: Periksa harga produk -> Debit saldo dompet -> Berikan cashback poin 1% -> Terbitkan Serial Number / Token PLN."
+							}
+						},
+						{
+							"name": "Riwayat Order Transaksi Saya",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/transactions/history",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "transactions", "history"]
+								}
+							}
+						},
+						{
+							"name": "Detail Order Berdasarkan Kode Transaksi",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{auth_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/transactions/ORD-20261014-998811",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "transactions", "ORD-20261014-998811"]
+								}
+							}
+						}
+					]
 				}
 			]
 		},
 		{
-			"name": "02 - Product Catalog",
+			"name": "02 - SUPER ADMIN & BACKOFFICE (Khusus Administrator)",
+			"description": "Seluruh endpoint pengelolaan terpusat untuk Role 'admin' dan 'superadmin' (Statistik, Kelola User, Saldo, Poin, dan Database).",
 			"item": [
 				{
-					"name": "List All Products",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products"]
-						},
-						"description": "Mengambil seluruh katalog produk digital (pulsa, data, pln, emoney, game). Kecepatan sub-millisecond dengan in-memory caching."
-					}
-				},
-				{
-					"name": "Filter by Category",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products?category=pulsa",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products"],
-							"query": [
+					"name": "2.1 Auth Admin",
+					"item": [
+						{
+							"name": "Login Admin (Auto-Save admin_token)",
+							"event": [
 								{
-									"key": "category",
-									"value": "pulsa"
+									"listen": "test",
+									"script": {
+										"exec": [
+											"var jsonData = pm.response.json();",
+											"if (jsonData && jsonData.data && jsonData.data.access_token) {",
+											"    pm.collectionVariables.set('admin_token', jsonData.data.access_token);",
+											"    console.log('👑 Token Admin otomatis tersimpan di variable admin_token:', jsonData.data.access_token);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
 								}
-							]
-						}
-					}
-				},
-				{
-					"name": "Filter by Brand",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products?brand=Telkomsel",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products"],
-							"query": [
-								{
-									"key": "brand",
-									"value": "Telkomsel"
-								}
-							]
-						}
-					}
-				},
-				{
-					"name": "Search Products",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products?search=10.000",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products"],
-							"query": [
-								{
-									"key": "search",
-									"value": "10.000"
-								}
-							]
-						}
-					}
-				},
-				{
-					"name": "Get Product Detail by Code",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/TSEL10",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "TSEL10"]
-						}
-					}
-				},
-				{
-					"name": "List Product Categories",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/categories",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "categories"]
-						}
-					}
-				},
-				{
-					"name": "List Product Brands",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/products/brands?category=pulsa",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "products", "brands"],
-							"query": [
-								{
-									"key": "category",
-									"value": "pulsa"
-								}
-							]
-						}
-					}
-				}
-			]
-		},
-		{
-			"name": "03 - Wallet & Balance",
-			"item": [
-				{
-					"name": "Get Balance & Points",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/wallet/balance",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "wallet", "balance"]
-						},
-						"description": "Mengambil saldo aktif dan poin user saat ini langsung dari database Supabase."
-					}
-				},
-				{
-					"name": "Get Wallet History",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/wallet/history",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "wallet", "history"]
-						},
-						"description": "Mengambil mutasi riwayat saldo uang (credit / debit)."
-					}
-				},
-				{
-					"name": "Top Up Saldo",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"user@gmail.com\",\n  \"password\": \"123456\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/auth/login",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "auth", "login"]
+								},
+								"description": "Login sebagai Admin/Superadmin. Token akan otomatis tersimpan di variabel koleksi {{admin_token}}."
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"amount\": 50000,\n  \"channel\": \"QRIS Instant\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/wallet/topup",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "wallet", "topup"]
 						}
-					}
+					]
 				},
 				{
-					"name": "Pay (Debit Saldo Manual)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
+					"name": "2.2 Dashboard & Statistik Platform",
+					"item": [
+						{
+							"name": "Dashboard Statistik & Performa Sistem",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/dashboard",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "dashboard"]
+								},
+								"description": "Menampilkan agregasi total uang berputar, total user aktif, alokasi memori runtime, dan status server."
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"amount\": 11250,\n  \"title\": \"Pembayaran Pulsa Telkomsel\",\n  \"description\": \"Beli Pulsa 10.000 ke 081234567890\",\n  \"category\": \"PAYMENT\",\n  \"reference_id\": \"REF-MANUAL-001\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/wallet/pay",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "wallet", "pay"]
 						}
-					}
+					]
 				},
 				{
-					"name": "Refund Transaksi",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
+					"name": "2.3 Manajemen Pengguna & Dompet (User Management)",
+					"item": [
+						{
+							"name": "Daftar Seluruh User Terdaftar (Database Supabase)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "users"]
+								},
+								"description": "Membaca seluruh user terdaftar langsung dari Supabase Database & Auth beserta saldo dompet masing-masing."
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"transaction_code\": \"TRX-20261014-XXXXXX\",\n  \"reason\": \"Fulfillment provider gangguan (Auto-Refund)\"\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/wallet/refund",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "wallet", "refund"]
-						}
-					}
-				}
-			]
-		},
-		{
-			"name": "04 - Points & Loyalty Rewards",
-			"item": [
-				{
-					"name": "Get Points Balance & History",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
+						{
+							"name": "Detail Dompet & Transaksi User Tertentu",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "users", "USER_ID_DISINI"]
 								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/wallet/points/history",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "wallet", "points", "history"]
-						},
-						"description": "Melihat mutasi poin rewards (Cashback belanja, Bonus loyalty, dan Penukaran poin)."
-					}
-				},
-				{
-					"name": "Redeem Points (Tukar Poin)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"amount\": 100,\n  \"description\": \"Tukar 100 DewaPoin jadi saldo diskon\"\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/wallet/points/redeem",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "wallet", "points", "redeem"]
-						}
-					}
-				}
-			]
-		},
-		{
-			"name": "05 - Transactions (PPOB Orders)",
-			"item": [
-				{
-					"name": "Create Order (Beli Produk Digital)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
+						{
+							"name": "Kunci Dompet User (Lock Wallet)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "PUT",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI/lock",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "users", "USER_ID_DISINI", "lock"]
+								},
+								"description": "Membekukan dompet user yang dicurigai melakukan aktivitas mencurigakan."
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"product_code\": \"TSEL10\",\n  \"target_account\": \"081234567890\"\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/transactions/order",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "transactions", "order"]
-						},
-						"description": "Membeli produk digital: Memvalidasi harga produk -> Memotong saldo dompet user -> Memberikan cashback 1% DewaPoin -> Mengeluarkan serial number / token PLN."
-					}
-				},
-				{
-					"name": "Get User Order History",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
+						{
+							"name": "Buka Kunci Dompet User (Unlock Wallet)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "PUT",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI/unlock",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "users", "USER_ID_DISINI", "unlock"]
 								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/transactions/history",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "transactions", "history"]
-						}
-					}
-				},
-				{
-					"name": "Get Order Detail",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/transactions/ORD-20261014-998811",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "transactions", "ORD-20261014-998811"]
-						}
-					}
-				}
-			]
-		},
-		{
-			"name": "06 - Admin Management",
-			"item": [
-				{
-					"name": "Admin Dashboard Statistics",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{admin_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/admin/dashboard",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "admin", "dashboard"]
-						},
-						"description": "Melihat agregasi total perputaran uang platform, total user aktif, memori server, dan performa real-time."
-					}
-				},
-				{
-					"name": "Admin List All Users & Wallets",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{admin_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/admin/users",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "admin", "users"]
-						},
-						"description": "Melihat seluruh pengguna terdaftar langsung dari Supabase Database & Auth."
-					}
-				},
-				{
-					"name": "Admin Lock User Wallet",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{admin_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PUT",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI/lock",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "admin", "users", "USER_ID_DISINI", "lock"]
-						}
-					}
-				},
-				{
-					"name": "Admin Unlock User Wallet",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{admin_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PUT",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/admin/users/USER_ID_DISINI/unlock",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "admin", "users", "USER_ID_DISINI", "unlock"]
-						}
-					}
-				},
-				{
-					"name": "Admin Balance Adjustment",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{admin_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"target_user_id\": \"USER_ID_TARGET\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100000,\n  \"reason\": \"Koreksi deposit gagal / Hadiah loyalty promosi\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/admin/adjust",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "admin", "adjust"]
 						}
-					}
+					]
 				},
 				{
-					"name": "Admin Points Adjustment",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{admin_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
+					"name": "2.4 Buku Kas Global (Platform Ledger)",
+					"item": [
+						{
+							"name": "Mutasi Saldo Seluruh Platform (All Transactions)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/transactions",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "transactions"]
+								},
+								"description": "Audit trail seluruh aliran transaksi uang masuk dan keluar di platform."
 							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"target_user_id\": \"USER_ID_TARGET\",\n  \"type\": \"CREDIT\",\n  \"amount\": 500,\n  \"reason\": \"Hadiah member setia DewaCell\"\n}"
 						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/admin/points/adjust",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "admin", "points", "adjust"]
+						{
+							"name": "Ledger Mutasi Seluruh Poin (All Point Mutations)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/points/transactions",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "points", "transactions"]
+								}
+							}
 						}
-					}
+					]
 				},
 				{
-					"name": "Admin Sync Products from Supabase DB",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{admin_token}}",
-									"type": "string"
+					"name": "2.5 Penyesuaian Saldo & Poin (Adjustment)",
+					"item": [
+						{
+							"name": "Koreksi / Tambah Saldo Pengguna (Adjust Balance)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"target_user_id\": \"USER_ID_TARGET\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100000,\n  \"reason\": \"Koreksi deposit gagal / Hadiah loyalty promosi\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/adjust",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "adjust"]
+								},
+								"description": "Menambah (CREDIT) atau mengurangi (DEBIT) saldo uang pengguna dengan pencatatan audit trail alasan dan email admin."
+							}
+						},
+						{
+							"name": "Koreksi / Tambah Poin Pengguna (Adjust Points)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"target_user_id\": \"USER_ID_TARGET\",\n  \"type\": \"CREDIT\",\n  \"amount\": 500,\n  \"reason\": \"Hadiah event member setia DewaCell\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/points/adjust",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "points", "adjust"]
 								}
-							]
-						},
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/admin/products/sync",
-							"host": ["{{base_url}}"],
-							"path": ["api", "v1", "admin", "products", "sync"]
-						},
-						"description": "Menarik pembaruan harga dan produk terbaru dari database Supabase ke in-memory cache server."
-					}
+							}
+						}
+					]
+				},
+				{
+					"name": "2.6 Sinkronisasi Katalog Database",
+					"item": [
+						{
+							"name": "Sinkronkan Produk dari Database Supabase (Sync Products)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{admin_token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/v1/admin/products/sync",
+									"host": ["{{base_url}}"],
+									"path": ["api", "v1", "admin", "products", "sync"]
+								},
+								"description": "Memaksa server untuk menyinkronkan ulang data harga & produk terbaru dari tabel public.products di Supabase."
+							}
+						}
+					]
 				}
 			]
 		}
