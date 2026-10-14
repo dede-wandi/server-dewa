@@ -56,6 +56,12 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/transactions", h.GetHistory)
 	r.Post("/pay", h.Pay)
 	r.Post("/topup", h.TopUp)
+	r.Post("/transfer", h.Transfer)
+
+	// PIN Security endpoints (requires login token)
+	r.Post("/pin/setup", h.SetupPIN)
+	r.Post("/pin/change", h.ChangePIN)
+	r.Post("/pin/verify", h.VerifyPIN)
 
 	// Points endpoints (requires login token)
 	r.Get("/points", h.GetPointHistory)
@@ -144,6 +150,7 @@ func (h *Handler) GetBalance(w http.ResponseWriter, r *http.Request) {
 			"points":          wal.Points,
 			"formatted_coins": fmt.Sprintf("%d Poin", wal.Points),
 			"is_locked":       wal.IsLocked,
+			"is_pin_set":      wal.IsPINSet,
 			"updated_at":      wal.UpdatedAt.Format(time.RFC3339),
 		},
 	})
@@ -352,6 +359,155 @@ func (h *Handler) RejectTopUp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) SetupPIN(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req SetupPINRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload request tidak valid",
+		})
+		return
+	}
+
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := h.walletService.SetupPIN(user.ID, token, req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":     "success",
+		"message":    "PIN transaksi 6 digit berhasil dibuat",
+		"is_pin_set": true,
+	})
+}
+
+func (h *Handler) ChangePIN(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req ChangePINRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload request tidak valid",
+		})
+		return
+	}
+
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := h.walletService.ChangePIN(user.ID, token, req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":     "success",
+		"message":    "PIN transaksi berhasil diubah",
+		"is_pin_set": true,
+	})
+}
+
+func (h *Handler) VerifyPIN(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req VerifyPINRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload request tidak valid",
+		})
+		return
+	}
+
+	if err := h.walletService.VerifyPIN(user.ID, req.PIN); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "PIN transaksi valid",
+		"valid":   true,
+	})
+}
+
+func (h *Handler) Transfer(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"status":"error","message":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req TransferRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload request tidak valid: JSON diperlukan",
+		})
+		return
+	}
+
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	trx, wal, err := h.walletService.Transfer(user, token, req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":      "success",
+		"message":     fmt.Sprintf("Transfer saldo sebesar Rp %s berhasil", formatRupiah(int64(req.Amount))),
+		"transaction": trx,
+		"wallet": map[string]interface{}{
+			"user_id":    wal.UserID,
+			"user_email": wal.UserEmail,
+			"balance":    wal.Balance,
+			"formatted":  fmt.Sprintf("Rp %s", formatRupiah(int64(wal.Balance))),
+			"points":     wal.Points,
+			"is_locked":  wal.IsLocked,
+			"is_pin_set": wal.IsPINSet,
+			"updated_at": wal.UpdatedAt.Format(time.RFC3339),
+		},
+	})
+}
 
 func (h *Handler) Refund(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

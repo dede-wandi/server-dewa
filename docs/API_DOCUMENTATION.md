@@ -155,10 +155,67 @@ Semua endpoint berikut telah diuji dan diverifikasi secara langsung:
 ```json
 {
   "status": "success",
-  "user_email": "user@gmail.com",
-  "user_id": "d4d709fb-a348-4066-a352-ee3ed0e03fa8",
-  "balance": 500000,
-  "currency": "IDR"
+  "data": {
+    "user_id": "d4d709fb-a348-4066-a352-ee3ed0e03fa8",
+    "user_email": "user@gmail.com",
+    "balance": 500000,
+    "formatted": "Rp 500.000",
+    "points": 10000,
+    "formatted_coins": "10000 Poin",
+    "is_locked": false,
+    "is_pin_set": true,
+    "updated_at": "2026-10-14T11:30:43Z"
+  }
+}
+```
+
+---
+
+### 6. Keamanan PIN Transaksi & Transfer Saldo
+
+#### A. Setup PIN Transaksi (Pertama Kali)
+- **Method**: `POST /api/v1/wallet/pin/setup`
+- **Headers**: `Authorization: Bearer <access_token>`
+- **Body**:
+```json
+{
+  "pin": "123456",
+  "confirm_pin": "123456"
+}
+```
+
+#### B. Ubah PIN Transaksi
+- **Method**: `POST /api/v1/wallet/pin/change`
+- **Headers**: `Authorization: Bearer <access_token>`
+- **Body**:
+```json
+{
+  "old_pin": "123456",
+  "new_pin": "654321",
+  "confirm_pin": "654321"
+}
+```
+
+#### C. Verifikasi PIN Transaksi
+- **Method**: `POST /api/v1/wallet/pin/verify`
+- **Headers**: `Authorization: Bearer <access_token>`
+- **Body**:
+```json
+{
+  "pin": "654321"
+}
+```
+
+#### D. Transfer Saldo Antar Pengguna / Mitra
+- **Method**: `POST /api/v1/wallet/transfer`
+- **Headers**: `Authorization: Bearer <access_token>`
+- **Body**:
+```json
+{
+  "target_user_id": "target-uuid-or-target-email",
+  "amount": 25000,
+  "pin": "654321",
+  "notes": "Transfer saldo sesama agen"
 }
 ```
 

@@ -26,6 +26,8 @@ type Wallet struct {
 	Balance   float64   `json:"balance"`
 	Points    int64     `json:"points"`
 	IsLocked  bool      `json:"is_locked"`
+	IsPINSet  bool      `json:"is_pin_set"`
+	PINHash   string    `json:"-"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -56,6 +58,35 @@ type PayRequest struct {
 	Description string  `json:"description"`
 	Category    string  `json:"category"`
 	ReferenceID string  `json:"reference_id"`
+	PIN         string  `json:"pin,omitempty"`
+}
+
+// SetupPINRequest represents payload to create wallet PIN for the first time
+type SetupPINRequest struct {
+	PIN        string `json:"pin"`
+	ConfirmPIN string `json:"confirm_pin"`
+}
+
+// ChangePINRequest represents payload to change existing wallet PIN
+type ChangePINRequest struct {
+	OldPIN     string `json:"old_pin"`
+	NewPIN     string `json:"new_pin"`
+	ConfirmPIN string `json:"confirm_pin"`
+}
+
+// VerifyPINRequest represents payload to verify wallet PIN
+type VerifyPINRequest struct {
+	PIN string `json:"pin"`
+}
+
+// TransferRequest represents payload to transfer balance to another user
+type TransferRequest struct {
+	TargetUserID string  `json:"target_user_id,omitempty"`
+	TargetEmail  string  `json:"target_email,omitempty"`
+	TargetPhone  string  `json:"target_phone,omitempty"`
+	Amount       float64 `json:"amount"`
+	PIN          string  `json:"pin"`
+	Notes        string  `json:"notes,omitempty"`
 }
 
 // TopUpRequest represents a balance deposit request

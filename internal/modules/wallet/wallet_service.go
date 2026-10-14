@@ -23,6 +23,12 @@ type WalletService interface {
 	Refund(caller *supabase.User, token string, req RefundRequest) (*WalletTransaction, *Wallet, error)
 	AdjustBalance(adminUser *supabase.User, token string, req AdjustRequest) (*WalletTransaction, *Wallet, error)
 
+	// PIN & Transfer Security
+	SetupPIN(userID, token string, req SetupPINRequest) error
+	ChangePIN(userID, token string, req ChangePINRequest) error
+	VerifyPIN(userID, pin string) error
+	Transfer(caller *supabase.User, token string, req TransferRequest) (*WalletTransaction, *Wallet, error)
+
 	GetAllWallets() []*Wallet
 	GetUserWallet(userID string) (*Wallet, []*WalletTransaction, error)
 	SetUserLock(userID string, locked bool) (*Wallet, error)
@@ -64,6 +70,13 @@ func (s *walletService) GetBalance(userID, email, token string) (*Wallet, error)
 				if locked, ok := rpcRes["is_locked"].(bool); ok {
 					wal.IsLocked = locked
 				}
+				if isPinSet, ok := rpcRes["is_pin_set"].(bool); ok {
+					wal.IsPINSet = isPinSet
+				}
+				if pinHash, ok := rpcRes["pin_hash"].(string); ok && pinHash != "" {
+					wal.PINHash = pinHash
+					wal.IsPINSet = true
+				}
 				s.repo.SaveWallet(wal)
 				return wal, nil
 			}
@@ -102,6 +115,17 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 	}
 	if req.Category == "" {
 		req.Category = CategoryPayment
+	}
+
+	wal, _ := s.repo.GetWallet(userID)
+	if wal != nil && wal.IsPINSet {
+		pin := strings.TrimSpace(req.PIN)
+		if pin == "" {
+			return nil, nil, errors.New("PIN transaksi wajib disertakan untuk melakukan pembayaran")
+		}
+		if !CheckPIN(pin, wal.PINHash) {
+			return nil, nil, errors.New("PIN transaksi salah. Pembayaran ditolak.")
+		}
 	}
 
 	// 1. Try Supabase RPC
@@ -156,7 +180,7 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 	}
 
 	// 2. In-Memory fallback
-	wal := s.repo.GetOrCreateWallet(userID, email)
+	wal = s.repo.GetOrCreateWallet(userID, email)
 	if wal.IsLocked {
 		return nil, nil, errors.New("Dompet sedang dikunci")
 	}
@@ -579,7 +603,17 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 		return nil, nil, errors.New("Alasan penyesuaian saldo wajib diisi untuk keperluan audit")
 	}
 
-	title := fmt.Sprintf("Koreksi Saldo oleh Super Admin (%s)", adminUser.Email)
+	adminID := "system"
+	adminEmail := "System"
+	if adminUser != nil {
+		if adminUser.ID != "" {
+			adminID = adminUser.ID
+		}
+		if adminUser.Email != "" {
+			adminEmail = adminUser.Email
+		}
+	}
+	title := fmt.Sprintf("Koreksi Saldo oleh Super Admin (%s)", adminEmail)
 	desc := fmt.Sprintf("Penyesuaian saldo manual: %s", req.Reason)
 	if req.AdminNotes != "" {
 		desc += fmt.Sprintf(" [Catatan: %s]", req.AdminNotes)
@@ -667,8 +701,8 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 		Title:           title,
 		Description:     desc,
 		ReferenceID:     trxCode,
-		AdminID:         adminUser.ID,
-		AdminEmail:      adminUser.Email,
+		AdminID:         adminID,
+		AdminEmail:      adminEmail,
 		AdminNotes:      req.Reason,
 		Status:          "SUCCESS",
 		CreatedAt:       time.Now(),
@@ -719,4 +753,282 @@ func (s *walletService) GetAllTransactions() []*WalletTransaction {
 
 func (s *walletService) GetStats() map[string]interface{} {
 	return s.repo.GetStats()
+}
+
+func (s *walletService) SetupPIN(userID, token string, req SetupPINRequest) error {
+	pin := strings.TrimSpace(req.PIN)
+	confirmPIN := strings.TrimSpace(req.ConfirmPIN)
+
+	if pin == "" {
+		return errors.New("PIN transaksi wajib diisi")
+	}
+	if err := ValidatePIN(pin); err != nil {
+		return err
+	}
+	if pin != confirmPIN {
+		return errors.New("Konfirmasi PIN tidak cocok dengan PIN")
+	}
+
+	wal, err := s.GetBalance(userID, "", token)
+	if err != nil {
+		return err
+	}
+
+	if wal.IsPINSet && wal.PINHash != "" {
+		return errors.New("PIN transaksi sudah pernah dibuat. Gunakan fitur ubah PIN jika ingin mengganti.")
+	}
+
+	hashed, err := HashPIN(pin)
+	if err != nil {
+		return fmt.Errorf("Gagal mengenkripsi PIN: %w", err)
+	}
+
+	// 1. Try Supabase RPC
+	if s.sbClient != nil && token != "" {
+		rpcPayload := map[string]interface{}{
+			"p_user_id":  userID,
+			"p_pin_hash": hashed,
+		}
+		_, _ = s.sbClient.CallRPC("setup_wallet_pin", rpcPayload, token)
+	}
+
+	wal.PINHash = hashed
+	wal.IsPINSet = true
+	s.repo.SaveWallet(wal)
+	return nil
+}
+
+func (s *walletService) ChangePIN(userID, token string, req ChangePINRequest) error {
+	oldPIN := strings.TrimSpace(req.OldPIN)
+	newPIN := strings.TrimSpace(req.NewPIN)
+	confirmPIN := strings.TrimSpace(req.ConfirmPIN)
+
+	if oldPIN == "" {
+		return errors.New("PIN lama wajib diisi")
+	}
+	if newPIN == "" {
+		return errors.New("PIN baru wajib diisi")
+	}
+	if err := ValidatePIN(newPIN); err != nil {
+		return err
+	}
+	if newPIN != confirmPIN {
+		return errors.New("Konfirmasi PIN baru tidak cocok")
+	}
+	if oldPIN == newPIN {
+		return errors.New("PIN baru tidak boleh sama dengan PIN lama")
+	}
+
+	wal, err := s.GetBalance(userID, "", token)
+	if err != nil {
+		return err
+	}
+
+	if !wal.IsPINSet || wal.PINHash == "" {
+		return errors.New("PIN transaksi belum dibuat. Silakan buat PIN terlebih dahulu.")
+	}
+
+	if !CheckPIN(oldPIN, wal.PINHash) {
+		return errors.New("PIN lama tidak sesuai / salah")
+	}
+
+	hashed, err := HashPIN(newPIN)
+	if err != nil {
+		return fmt.Errorf("Gagal mengenkripsi PIN baru: %w", err)
+	}
+
+	// 1. Try Supabase RPC
+	if s.sbClient != nil && token != "" {
+		rpcPayload := map[string]interface{}{
+			"p_user_id":      userID,
+			"p_new_pin_hash": hashed,
+		}
+		_, _ = s.sbClient.CallRPC("change_wallet_pin", rpcPayload, token)
+	}
+
+	wal.PINHash = hashed
+	wal.IsPINSet = true
+	s.repo.SaveWallet(wal)
+	return nil
+}
+
+func (s *walletService) VerifyPIN(userID, pin string) error {
+	wal, ok := s.repo.GetWallet(userID)
+	if !ok || !wal.IsPINSet || wal.PINHash == "" {
+		return errors.New("PIN transaksi belum dibuat. Silakan buat PIN terlebih dahulu.")
+	}
+	if !CheckPIN(pin, wal.PINHash) {
+		return errors.New("PIN transaksi salah")
+	}
+	return nil
+}
+
+func (s *walletService) Transfer(caller *supabase.User, token string, req TransferRequest) (*WalletTransaction, *Wallet, error) {
+	if caller == nil {
+		return nil, nil, errors.New("Unauthorized: sesi pengguna tidak valid")
+	}
+	if req.Amount <= 0 {
+		return nil, nil, errors.New("Nominal transfer harus lebih besar dari 0")
+	}
+	if req.Amount < 1000 {
+		return nil, nil, errors.New("Minimal transfer saldo adalah Rp 1.000")
+	}
+
+	pin := strings.TrimSpace(req.PIN)
+	if pin == "" {
+		return nil, nil, errors.New("PIN transaksi wajib disertakan untuk melakukan transfer")
+	}
+
+	// 1. Ambil data dompet pengirim & verifikasi PIN
+	senderWallet, err := s.GetBalance(caller.ID, caller.Email, token)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !senderWallet.IsPINSet || senderWallet.PINHash == "" {
+		return nil, nil, errors.New("PIN transaksi belum dibuat. Silakan buat PIN terlebih dahulu sebelum transfer.")
+	}
+	if !CheckPIN(pin, senderWallet.PINHash) {
+		return nil, nil, errors.New("PIN transaksi salah. Transfer dibatalkan.")
+	}
+
+	if senderWallet.IsLocked {
+		return nil, nil, errors.New("Dompet Anda sedang dikunci. Silakan hubungi CS DewaCell.")
+	}
+
+	if senderWallet.Balance < req.Amount {
+		return nil, nil, fmt.Errorf("Saldo Anda tidak mencukupi. Saldo saat ini: Rp %s, Dibutuhkan: Rp %s",
+			formatRupiah(int64(senderWallet.Balance)), formatRupiah(int64(req.Amount)))
+	}
+
+	// 2. Tentukan target user
+	targetID := strings.TrimSpace(req.TargetUserID)
+	targetEmail := strings.TrimSpace(req.TargetEmail)
+
+	if targetID == caller.ID || (targetEmail != "" && strings.EqualFold(targetEmail, caller.Email)) {
+		return nil, nil, errors.New("Tidak dapat mentransfer saldo ke akun sendiri")
+	}
+
+	var targetWallet *Wallet
+	if targetID != "" {
+		targetWallet, _ = s.repo.GetWallet(targetID)
+	}
+	if targetWallet == nil && targetEmail != "" {
+		targetWallet, _ = s.repo.FindWalletByEmail(targetEmail)
+	}
+
+	if targetWallet == nil {
+		if targetID != "" {
+			targetWallet = s.repo.GetOrCreateWallet(targetID, targetEmail)
+		} else if targetEmail != "" {
+			targetWallet = s.repo.GetOrCreateWallet("usr-"+strings.ReplaceAll(targetEmail, "@", "-at-"), targetEmail)
+		} else {
+			return nil, nil, errors.New("Tujuan transfer tidak valid. Sertakan target_user_id atau target_email penerima.")
+		}
+	}
+
+	if targetWallet.UserID == caller.ID {
+		return nil, nil, errors.New("Tidak dapat mentransfer saldo ke akun sendiri")
+	}
+
+	if targetWallet.IsLocked {
+		return nil, nil, errors.New("Dompet penerima sedang dibekukan / dikunci.")
+	}
+
+	notes := strings.TrimSpace(req.Notes)
+	if notes == "" {
+		notes = "Transfer saldo DewaPay"
+	}
+
+	// 3. Coba Supabase RPC jika targetID adalah UUID
+	if s.sbClient != nil && token != "" && len(targetWallet.UserID) == 36 {
+		rpcPayload := map[string]interface{}{
+			"p_sender_id":   caller.ID,
+			"p_receiver_id": targetWallet.UserID,
+			"p_amount":      req.Amount,
+			"p_notes":       notes,
+		}
+		if respBytes, err := s.sbClient.CallRPC("transfer_app_wallet_balance", rpcPayload, token); err == nil {
+			var rpcRes map[string]interface{}
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
+				senderWallet.Balance -= req.Amount
+				s.repo.SaveWallet(senderWallet)
+
+				targetWallet.Balance += req.Amount
+				s.repo.SaveWallet(targetWallet)
+
+				senderTrxCode, _ := rpcRes["sender_transaction_code"].(string)
+				if senderTrxCode == "" {
+					senderTrxCode = fmt.Sprintf("TFO-%s-%06d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000)
+				}
+
+				senderTrx := &WalletTransaction{
+					ID:              "trx-" + senderTrxCode,
+					TransactionCode: senderTrxCode,
+					UserID:          caller.ID,
+					Type:            TypeDebit,
+					Category:        CategoryTransferOut,
+					Amount:          req.Amount,
+					BalanceBefore:   senderWallet.Balance + req.Amount,
+					BalanceAfter:    senderWallet.Balance,
+					Title:           "Transfer Saldo ke " + targetWallet.UserEmail,
+					Description:     notes,
+					ReferenceID:     targetWallet.UserID,
+					Status:          "SUCCESS",
+					CreatedAt:       time.Now(),
+				}
+				s.repo.AddTransaction(senderTrx)
+				return senderTrx, senderWallet, nil
+			}
+		}
+	}
+
+	// 4. Memory execution fallback
+	senderBalanceBefore := senderWallet.Balance
+	senderBalanceAfter := senderBalanceBefore - req.Amount
+	senderWallet.Balance = senderBalanceAfter
+	s.repo.SaveWallet(senderWallet)
+
+	targetBalanceBefore := targetWallet.Balance
+	targetBalanceAfter := targetBalanceBefore + req.Amount
+	targetWallet.Balance = targetBalanceAfter
+	s.repo.SaveWallet(targetWallet)
+
+	trxCodeOut := fmt.Sprintf("TFO-%s-%06d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000)
+	trxCodeIn := fmt.Sprintf("TFI-%s-%06d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000)
+
+	senderTrx := &WalletTransaction{
+		ID:              "trx-" + trxCodeOut,
+		TransactionCode: trxCodeOut,
+		UserID:          caller.ID,
+		Type:            TypeDebit,
+		Category:        CategoryTransferOut,
+		Amount:          req.Amount,
+		BalanceBefore:   senderBalanceBefore,
+		BalanceAfter:    senderBalanceAfter,
+		Title:           "Transfer Saldo ke " + targetWallet.UserEmail,
+		Description:     notes,
+		ReferenceID:     trxCodeIn,
+		Status:          "SUCCESS",
+		CreatedAt:       time.Now(),
+	}
+	s.repo.AddTransaction(senderTrx)
+
+	recipientTrx := &WalletTransaction{
+		ID:              "trx-" + trxCodeIn,
+		TransactionCode: trxCodeIn,
+		UserID:          targetWallet.UserID,
+		Type:            TypeCredit,
+		Category:        CategoryTransferIn,
+		Amount:          req.Amount,
+		BalanceBefore:   targetBalanceBefore,
+		BalanceAfter:    targetBalanceAfter,
+		Title:           "Terima Saldo dari " + caller.Email,
+		Description:     notes,
+		ReferenceID:     trxCodeOut,
+		Status:          "SUCCESS",
+		CreatedAt:       time.Now(),
+	}
+	s.repo.AddTransaction(recipientTrx)
+
+	return senderTrx, senderWallet, nil
 }

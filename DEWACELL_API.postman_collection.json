@@ -589,6 +589,165 @@
                                 },
                                 "description": "Memotong saldo pengguna untuk pembayaran belanja atau tagihan."
                             }
+                        },
+                        {
+                            "name": "Transfer",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{auth_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"amount\": 25000,\n  \"pin\": \"123456\",\n  \"notes\": \"Transfer saldo sesama mitra\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/wallet/transfer",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "wallet",
+                                        "transfer"
+                                    ]
+                                },
+                                "description": "Mentransfer saldo ke pengguna lain (bisa via target_user_id atau target_email) dengan validasi PIN 6 digit."
+                            }
+                        },
+                        {
+                            "name": "Setup PIN",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{auth_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"pin\": \"123456\",\n  \"confirm_pin\": \"123456\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/wallet/pin/setup",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "wallet",
+                                        "pin",
+                                        "setup"
+                                    ]
+                                },
+                                "description": "Membuat PIN transaksi 6 digit pertama kali untuk mengamankan saldo dan transaksi."
+                            }
+                        },
+                        {
+                            "name": "Change PIN",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{auth_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"old_pin\": \"123456\",\n  \"new_pin\": \"654321\",\n  \"confirm_pin\": \"654321\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/wallet/pin/change",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "wallet",
+                                        "pin",
+                                        "change"
+                                    ]
+                                },
+                                "description": "Mengubah PIN transaksi lama ke PIN 6 digit baru."
+                            }
+                        },
+                        {
+                            "name": "Verify PIN",
+                            "request": {
+                                "auth": {
+                                    "type": "bearer",
+                                    "bearer": [
+                                        {
+                                            "key": "token",
+                                            "value": "{{auth_token}}",
+                                            "type": "string"
+                                        }
+                                    ]
+                                },
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"pin\": \"123456\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/wallet/pin/verify",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "wallet",
+                                        "pin",
+                                        "verify"
+                                    ]
+                                },
+                                "description": "Memverifikasi apakah PIN transaksi yang dimasukkan pengguna cocok sebelum membuka halaman sensitif."
+                            }
                         }
                     ]
                 },

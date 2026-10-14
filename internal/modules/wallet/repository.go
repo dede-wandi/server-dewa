@@ -11,6 +11,7 @@ import (
 // Repository defines the storage contract for wallets, transactions, and points
 type Repository interface {
 	GetWallet(userID string) (*Wallet, bool)
+	FindWalletByEmail(email string) (*Wallet, bool)
 	GetOrCreateWallet(userID, email string) *Wallet
 	SaveWallet(w *Wallet)
 	GetAllWallets() []*Wallet
@@ -61,6 +62,21 @@ func (r *MemoryRepository) GetWallet(userID string) (*Wallet, bool) {
 	defer r.mu.RUnlock()
 	w, ok := r.wallets[userID]
 	return w, ok
+}
+
+func (r *MemoryRepository) FindWalletByEmail(email string) (*Wallet, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	cleanEmail := strings.ToLower(strings.TrimSpace(email))
+	if cleanEmail == "" {
+		return nil, false
+	}
+	for _, w := range r.wallets {
+		if strings.ToLower(strings.TrimSpace(w.UserEmail)) == cleanEmail {
+			return w, true
+		}
+	}
+	return nil, false
 }
 
 func (r *MemoryRepository) GetOrCreateWallet(userID, email string) *Wallet {
