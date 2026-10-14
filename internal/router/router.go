@@ -32,6 +32,7 @@ func New(cfg *config.Config) *chi.Mux {
 	r.Use(chiMiddleware.RealIP)
 	r.Use(chiMiddleware.Logger)
 	r.Use(chiMiddleware.Recoverer)
+	r.Use(chiMiddleware.Compress(5))
 	r.Use(chiMiddleware.Timeout(30 * time.Second))
 
 	// CORS Configuration
@@ -76,20 +77,29 @@ func New(cfg *config.Config) *chi.Mux {
 
 	// Initialize Handlers
 	authHandler := auth.NewHandler(sbClient)
-	productHandler := product.NewHandler()
-	transactionHandler := transaction.NewHandler()
+	productHandler := product.NewHandler(sbClient)
 	walletHandler := wallet.NewHandler(sbClient)
+	transactionHandler := transaction.NewHandler(walletHandler.GetWalletService(), productHandler.GetService(), sbClient)
 	adminHandler := admin.NewHandler(sbClient, walletHandler)
 
 	r.Route("/api/v1", func(api chi.Router) {
 		// Auth endpoints (public login/register/refresh, protected /me)
 		api.Mount("/auth", authHandler.Routes())
 
+		// Public catalog browsing (fast cached responses)
+		api.Get("/products", productHandler.ListProducts)
+		api.Get("/products/categories", productHandler.ListCategories)
+		api.Get("/products/brands", productHandler.ListBrands)
+		api.Get("/products/{code}", productHandler.GetProductDetail)
+		api.Get("/products/ping", productHandler.Ping)
+		api.Get("/products/info", productHandler.Info)
+
 		// DEDICATED SUPER ADMIN & ADMIN ENDPOINTS: Wajib login & role 'admin' / 'superadmin'
 		api.Route("/admin", func(adminRouter chi.Router) {
 			adminRouter.Use(middleware.RequireAuth(sbClient))
 			adminRouter.Use(middleware.RequireRoles("admin", "superadmin"))
 			adminRouter.Mount("/", adminHandler.Routes())
+			adminRouter.Post("/products/sync", productHandler.SyncProducts)
 		})
 
 		// PROTECTED MICROSERVICES: Semua modul wajib melalui autentikasi login Supabase

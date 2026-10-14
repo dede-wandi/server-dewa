@@ -118,7 +118,6 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 				wal := s.repo.GetOrCreateWallet(userID, email)
 				balAfter, _ := rpcRes["balance_after"].(float64)
 				wal.Balance = balAfter
-				wal.Points += int64(req.Amount * 0.01)
 				s.repo.SaveWallet(wal)
 
 				trxCode, _ := rpcRes["transaction_code"].(string)
@@ -166,7 +165,6 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 	balanceBefore := wal.Balance
 	wal.Balance -= req.Amount
 	balanceAfter := wal.Balance
-	wal.Points += int64(req.Amount * 0.01)
 	s.repo.SaveWallet(wal)
 
 	trxCode := fmt.Sprintf("TRX-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)

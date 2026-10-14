@@ -32,6 +32,16 @@ func NewHandler(sbClient *supabase.Client) *Handler {
 	}
 }
 
+// GetWalletService returns the underlying WalletService instance
+func (h *Handler) GetWalletService() WalletService {
+	return h.walletService
+}
+
+// GetPointService returns the underlying PointService instance
+func (h *Handler) GetPointService() PointService {
+	return h.pointService
+}
+
 // Routes registers all endpoints for wallet and points
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()

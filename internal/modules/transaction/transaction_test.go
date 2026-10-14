@@ -1,0 +1,88 @@
+package transaction
+
+import (
+	"testing"
+	"time"
+
+	"github.com/dede-wandi/server-dewa/internal/modules/product"
+	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
+	"github.com/dede-wandi/server-dewa/internal/supabase"
+)
+
+func TestTransactionOrderLifecycle(t *testing.T) {
+	// Setup dependencies
+	walletRepo := wallet.NewMemoryRepository()
+	pointSvc := wallet.NewPointService(walletRepo, nil)
+	walletSvc := wallet.NewWalletService(walletRepo, pointSvc, nil)
+
+	productRepo := product.NewCachedRepository(1 * time.Minute)
+	productSvc := product.NewService(productRepo, nil)
+
+	txRepo := NewMemoryRepository()
+	txSvc := NewService(txRepo, walletSvc, productSvc, nil)
+
+	testUser := &supabase.User{
+		ID:    "user-test-uuid-123",
+		Email: "user@test.com",
+	}
+
+	// 1. Top up wallet balance
+	_, _, err := walletSvc.TopUp(testUser.ID, testUser.Email, "", wallet.TopUpRequest{
+		Amount:  50000,
+		Channel: "Bank Transfer",
+	})
+	if err != nil {
+		t.Fatalf("failed to topup: %v", err)
+	}
+
+	bal, err := walletSvc.GetBalance(testUser.ID, testUser.Email, "")
+	if err != nil || bal.Balance != 50000 {
+		t.Fatalf("expected balance 50000, got %v (err: %v)", bal, err)
+	}
+
+	// 2. Create order for Telkomsel 10k (price 11.200)
+	req := CreateOrderRequest{
+		ProductCode:   "TSEL10",
+		TargetAccount: "081234567890",
+	}
+
+	order, err := txSvc.CreateOrder(testUser, "", req)
+	if err != nil {
+		t.Fatalf("failed to create order: %v", err)
+	}
+
+	if order.Status != StatusSuccess {
+		t.Errorf("expected status SUCCESS, got %s", order.Status)
+	}
+	if order.ProductCode != "TSEL10" {
+		t.Errorf("expected product code TSEL10, got %s", order.ProductCode)
+	}
+
+	// Check balance after payment (50000 - 11250 = 38750)
+	balAfter, _ := walletSvc.GetBalance(testUser.ID, testUser.Email, "")
+	if balAfter.Balance != 38750 {
+		t.Errorf("expected remaining balance 38750, got %f", balAfter.Balance)
+	}
+
+	// 3. Test insufficient funds
+	bigReq := CreateOrderRequest{
+		ProductCode:   "PLN100", // price 102500 > 38800
+		TargetAccount: "12345678901",
+	}
+	_, err = txSvc.CreateOrder(testUser, "", bigReq)
+	if err == nil {
+		t.Errorf("expected insufficient funds error, but order succeeded")
+	}
+
+	// 4. Test order detail retrieval
+	fetched, err := txSvc.GetOrderDetail(order.OrderCode)
+	if err != nil || fetched.OrderCode != order.OrderCode {
+		t.Errorf("failed to retrieve order detail: %v", err)
+	}
+
+	// 5. Test user history
+	history := txSvc.GetUserOrders(testUser.ID)
+	if len(history) != 1 {
+		t.Errorf("expected 1 order in history, got %d", len(history))
+	}
+}

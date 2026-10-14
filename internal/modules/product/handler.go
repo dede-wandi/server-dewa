@@ -2,26 +2,48 @@ package product
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/middleware"
+	"github.com/dede-wandi/server-dewa/internal/supabase"
 	"github.com/go-chi/chi/v5"
 )
 
-type Handler struct{}
-
-func NewHandler() *Handler {
-	return &Handler{}
+// Handler represents the presentation HTTP controller for the product catalog
+type Handler struct {
+	service Service
 }
 
+// NewHandler creates a new instance of Handler with OOP Service & Cache Repository
+func NewHandler(sbClient *supabase.Client) *Handler {
+	repo := NewCachedRepository(5 * time.Minute)
+	svc := NewService(repo, sbClient)
+
+	return &Handler{
+		service: svc,
+	}
+}
+
+// GetService returns the underlying Service instance
+func (h *Handler) GetService() Service {
+	return h.service
+}
+
+// Routes mounts all endpoints for products
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
+
+	// Public / General product catalog
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
-	r.Get("/", h.ListSample)
+	r.Get("/", h.ListProducts)
+	r.Get("/categories", h.ListCategories)
+	r.Get("/brands", h.ListBrands)
+	r.Get("/{code}", h.GetProductDetail)
 
-	// Admin-only route demonstration
+	// Admin-only synchronization
 	r.Group(func(adminOnly chi.Router) {
 		adminOnly.Use(middleware.RequireRoles("admin", "superadmin"))
 		adminOnly.Post("/sync", h.SyncProducts)
@@ -30,34 +52,101 @@ func (h *Handler) Routes() chi.Router {
 	return r
 }
 
-func (h *Handler) SyncProducts(w http.ResponseWriter, r *http.Request) {
+// ListProducts returns the list of digital products, optionally filtered by category, brand, or search
+func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user := middleware.GetUserFromContext(r.Context())
+
+	category := r.URL.Query().Get("category")
+	brand := r.URL.Query().Get("brand")
+	search := r.URL.Query().Get("search")
+
+	products := h.service.ListProducts(category, brand, search)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":     "success",
-		"message":    "Sinkronisasi produk berhasil dijalankan oleh admin",
-		"admin_id":   user.ID,
-		"admin_role": user.GetRoles(),
-		"synced_at":  time.Now().Format(time.RFC3339),
+		"status": "success",
+		"count":  len(products),
+		"data":   products,
 	})
 }
 
-
-func (h *Handler) Ping(w http.ResponseWriter, r *http.Request) {
+// GetProductDetail returns details for a single product code
+func (h *Handler) GetProductDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	user := middleware.GetUserFromContext(r.Context())
-	userEmail := "anonymous"
-	if user != nil {
-		userEmail = user.Email
+	code := chi.URLParam(r, "code")
+
+	p, err := h.service.GetProduct(code)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service":            "product-service",
-		"status":             "healthy",
-		"authenticated_user": userEmail,
-		"timestamp":          time.Now().Format(time.RFC3339),
-		"message":            "Product service is active (Protected by Supabase Auth)",
+		"status": "success",
+		"data":   p,
+	})
+}
+
+// ListCategories returns all available categories
+func (h *Handler) ListCategories(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	categories := h.service.GetCategories()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"count":  len(categories),
+		"data":   categories,
+	})
+}
+
+// ListBrands returns all brands or brands for a specific category
+func (h *Handler) ListBrands(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	category := r.URL.Query().Get("category")
+	brands := h.service.GetBrands(category)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"count":  len(brands),
+		"data":   brands,
+	})
+}
+
+// SyncProducts forces a cache sync from provider or database
+func (h *Handler) SyncProducts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+	adminID := "admin"
+	if user != nil {
+		adminID = user.ID
+	}
+
+	count, err := h.service.SyncProducts(adminID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "success",
+		"message":   fmt.Sprintf("Katalog produk berhasil disinkronisasi. Total %d produk aktif.", count),
+		"synced_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) Ping(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"service":   "product-service",
+		"status":    "healthy",
+		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
 
@@ -65,30 +154,9 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":     "product-service",
-		"version":     "v1.1.0",
-		"auth":        "Bearer Token Required",
-		"endpoints":   []string{"GET /api/v1/products", "GET /api/v1/products/{id}", "POST /api/v1/products/sync"},
-		"description": "PPOB digital products (Pulsa, Data, PLN, Game, E-Money) catalog and pricing",
-	})
-}
-
-func (h *Handler) ListSample(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	user := middleware.GetUserFromContext(r.Context())
-	userID := ""
-	if user != nil {
-		userID = user.ID
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":          "success",
-		"requester_id":    userID,
-		"requester_email": user.Email,
-		"data": []map[string]interface{}{
-			{"code": "TSEL10", "name": "Telkomsel 10.000", "category": "pulsa", "price": 10250},
-			{"code": "PLN20", "name": "Token PLN 20.000", "category": "pln", "price": 20500},
-			{"code": "DANA50", "name": "Saldo DANA 50.000", "category": "emoney", "price": 50500},
-			{"code": "ML86", "name": "Mobile Legends 86 Diamonds", "category": "game", "price": 19500},
-		},
+		"version":     "v2.0.0 (Clean OOP)",
+		"cache":       "In-Memory TTL 5m (Sub-millisecond latency)",
+		"endpoints":   []string{"GET /api/v1/products", "GET /api/v1/products/{code}", "GET /api/v1/products/categories", "GET /api/v1/products/brands", "POST /api/v1/products/sync"},
+		"description": "Clean Architecture catalog engine for Pulsa, Data, PLN, E-Money, Game",
 	})
 }

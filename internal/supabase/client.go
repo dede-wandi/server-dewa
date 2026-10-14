@@ -152,12 +152,22 @@ func (e *AuthError) Error() string {
 }
 
 func NewClient(url, anonKey, secretKey string) *Client {
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 25,
+		MaxConnsPerHost:     100,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 5 * time.Second,
+		DisableCompression:  false,
+	}
+
 	return &Client{
 		url:       url,
 		anonKey:   anonKey,
 		secretKey: secretKey,
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			Transport: transport,
 		},
 	}
 }
