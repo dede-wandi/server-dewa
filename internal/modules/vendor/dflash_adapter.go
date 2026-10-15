@@ -194,34 +194,8 @@ func (d *DFlashAdapter) OrderProduct(ctx context.Context, req *VendorOrderReques
 	targetEndpoint := fmt.Sprintf("/trx?memberID=%s&product=%s&dest=%s&refID=%s&sign=%s",
 		d.memberID, req.BuyerSKUCode, req.CustomerNo, req.RefID, sign)
 
-	// 2. Jika dalam mode testing atau kredensial belum ada, kembalikan simulasi siap sambung
-	if d.memberID == "" || req.Testing {
-		primaryCenter := "http://45.76.183.72:666"
-		if len(d.centers) > 0 {
-			primaryCenter = d.centers[0]
-		}
-		return &VendorOrderResponse{
-			VendorCode:   "DFLASH",
-			VendorTrxID:  fmt.Sprintf("DFLASH-%d", time.Now().UnixNano()),
-			RefID:        req.RefID,
-			BuyerSKUCode: req.BuyerSKUCode,
-			CustomerNo:   req.CustomerNo,
-			Price:        req.MaxPrice,
-			Status:       "PENDING",
-			Message:      fmt.Sprintf("Request order %s tujuan %s dipersiapkan dengan signature DFLASH: %s", req.BuyerSKUCode, req.CustomerNo, sign),
-			RawResponse: map[string]interface{}{
-				"member_id":      d.memberID,
-				"product":        req.BuyerSKUCode,
-				"dest":           req.CustomerNo,
-				"ref_id":         req.RefID,
-				"signature":      sign,
-				"request_url":    primaryCenter + targetEndpoint,
-				"active_centers": d.centers,
-				"status":         "READY_WITH_MULTI_CENTER",
-				"note":           "Mendukung 6 IP Center resmi dengan automatic failover jika salah satu down",
-			},
-			CreatedAt: time.Now(),
-		}, nil
+	if d.memberID == "" {
+		return nil, fmt.Errorf("kredensial vendor DFLASH belum dikonfigurasi (memberID kosong)")
 	}
 
 	// 3. Eksekusi request HTTP ke API DFLASH dengan failover otomatis
@@ -403,15 +377,7 @@ func (d *DFlashAdapter) CheckStatus(ctx context.Context, refID string) (*VendorO
 	checkEndpoint := fmt.Sprintf("/check?memberID=%s&refID=%s&sign=%s", d.memberID, refID, sign)
 
 	if d.memberID == "" {
-		return &VendorOrderResponse{
-			VendorCode:   "DFLASH",
-			VendorTrxID:  fmt.Sprintf("DFLASH-%s", refID),
-			RefID:        refID,
-			Status:       "SUCCESS",
-			SerialNumber: fmt.Sprintf("SN%d", time.Now().Unix()),
-			Message:      fmt.Sprintf("Cek status transaksi DFLASH terverifikasi (Signature: %s)", sign),
-			CreatedAt:    time.Now(),
-		}, nil
+		return nil, fmt.Errorf("kredensial vendor DFLASH belum dikonfigurasi (memberID kosong)")
 	}
 
 	bodyBytes, usedCenter, err := d.doRequestWithFailover(ctx, checkEndpoint)
@@ -445,31 +411,12 @@ func (d *DFlashAdapter) CheckStatus(ctx context.Context, refID string) (*VendorO
 // Format resmi: http://[ip_dflash]/balance?memberID=[memberid]&sign=[sign]
 // Template signature saldo: OtomaX|memberID||||pin|password
 func (d *DFlashAdapter) CheckBalance(ctx context.Context) (map[string]interface{}, error) {
+	if d.memberID == "" {
+		return nil, fmt.Errorf("kredensial vendor DFLASH belum dikonfigurasi (memberID kosong)")
+	}
+
 	sign := d.GenerateCheckSignature("")
 	balanceEndpoint := fmt.Sprintf("/balance?memberID=%s&sign=%s", d.memberID, sign)
-
-	primaryCenter := "http://45.76.183.72:666"
-	if len(d.centers) > 0 {
-		primaryCenter = d.centers[0]
-	}
-
-	if d.memberID == "" {
-		return map[string]interface{}{
-			"vendor_code":    "DFLASH",
-			"member_id":      d.memberID,
-			"signature":      sign,
-			"endpoint":       balanceEndpoint,
-			"primary_center": primaryCenter,
-			"request_url":    primaryCenter + balanceEndpoint,
-			"active_centers": d.centers,
-			"total_centers":  len(d.centers),
-			"balance":        12500000.0,
-			"currency":       "IDR",
-			"status":         "READY_WITH_MULTI_CENTER",
-			"message":        "Format cek saldo DFLASH & 6 IP Center aktif dengan auto-failover.",
-			"checked_at":     time.Now().Format(time.RFC3339),
-		}, nil
-	}
 
 	bodyBytes, usedCenter, err := d.doRequestWithFailover(ctx, balanceEndpoint)
 	if err != nil {

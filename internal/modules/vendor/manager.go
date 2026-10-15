@@ -22,10 +22,7 @@ var (
 func GetGlobalManager() *VendorManager {
 	once.Do(func() {
 		globalManager = NewVendorManager()
-		// Daftarkan adapter bawaan: generic manual dan vendor resmi DFLASH
-		globalManager.RegisterAdapter(NewMockVendorAdapter("MANUAL"))
-		globalManager.RegisterAdapter(NewMockVendorAdapter("MOCK"))
-		globalManager.RegisterAdapter(NewMockVendorAdapter("DEFAULT"))
+		// Daftarkan adapter vendor resmi DFLASH untuk seluruh transaksi live
 		globalManager.RegisterAdapter(NewDFlashAdapter("H2H02494", "112211", "DUNhil00@#", ""))
 	})
 	return globalManager
@@ -52,8 +49,8 @@ func (m *VendorManager) GetAdapter(vendorCode string) (IVendorAdapter, error) {
 	defer m.mu.RUnlock()
 
 	key := strings.ToUpper(strings.TrimSpace(vendorCode))
-	if key == "" {
-		key = "MANUAL"
+	if key == "" || key == "MANUAL" || key == "DEFAULT" || key == "MOCK" {
+		key = "DFLASH"
 	}
 
 	adapter, exists := m.adapters[key]

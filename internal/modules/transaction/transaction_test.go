@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -16,8 +18,17 @@ func TestTransactionOrderLifecycle(t *testing.T) {
 	pointSvc := wallet.NewPointService(walletRepo, nil)
 	walletSvc := wallet.NewWalletService(walletRepo, pointSvc, nil)
 
-	// Mock vendor adapter for offline deterministic unit testing
-	vendor.GetGlobalManager().RegisterAdapter(vendor.NewMockVendorAdapter("DFLASH"))
+	// Hubungkan DFlashAdapter asli ke mock server test untuk pengujian HTTP live
+	mockVendorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("TSEL10 ke 081234567890 SUKSES. SN: 2026101511223344. Sal: 150.000"))
+	}))
+	defer mockVendorServer.Close()
+
+	liveDFlash := vendor.NewDFlashAdapter("H2H02494", "112211", "DUNhil00@#", "")
+	liveDFlash.SetCenters([]string{mockVendorServer.URL})
+	vendor.GetGlobalManager().RegisterAdapter(liveDFlash)
 
 	productRepo := product.NewCachedRepository(1 * time.Minute)
 	productRepo.Save(&product.Product{

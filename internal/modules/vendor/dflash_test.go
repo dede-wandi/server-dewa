@@ -50,7 +50,19 @@ func TestDFlashSignatureAndAdapter(t *testing.T) {
 	}
 
 	// 4. Verifikasi dispatch melalui VendorManager
+	mockCenter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("FIBP14 ke 085712345678 SUKSES. SN: 9988776655. Saldo cukup."))
+	}))
+	defer mockCenter.Close()
+
+	dflashCustom := NewDFlashAdapter("H2H02494", "112211", "DUNhil00@#", "")
+	dflashCustom.SetCenters([]string{mockCenter.URL})
+
 	mgr := GetGlobalManager()
+	mgr.RegisterAdapter(dflashCustom)
+
 	err := mgr.ValidateProductVendor("DFLASH", "FIBP14")
 	if err != nil {
 		t.Fatalf("expected VendorManager to validate DFLASH with FIBP14, got err: %v", err)
@@ -62,7 +74,6 @@ func TestDFlashSignatureAndAdapter(t *testing.T) {
 		CustomerNo:   "085712345678",
 		RefID:        "REF-DF-001",
 		MaxPrice:     45000,
-		Testing:      true,
 	}
 
 	resp, err := mgr.ProcessOrder(context.Background(), req)
@@ -73,8 +84,8 @@ func TestDFlashSignatureAndAdapter(t *testing.T) {
 	if resp.VendorCode != "DFLASH" {
 		t.Errorf("expected VendorCode DFLASH, got %s", resp.VendorCode)
 	}
-	if resp.Status != "PENDING" {
-		t.Errorf("expected status PENDING, got %s", resp.Status)
+	if resp.Status != "SUCCESS" || resp.SerialNumber != "9988776655" {
+		t.Errorf("expected status SUCCESS with SN 9988776655, got %+v", resp)
 	}
 
 	// 5. Verifikasi Webhook Callback Parsing dari DFLASH
