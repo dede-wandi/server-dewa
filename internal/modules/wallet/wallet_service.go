@@ -309,7 +309,7 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 	balanceAfter := wal.Balance
 	s.repo.SaveWallet(wal)
 
-	trxCode := fmt.Sprintf("TRX-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
+	trxCode := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("trx-%d", time.Now().UnixNano()),
 		TransactionCode: trxCode,
@@ -415,12 +415,8 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 		wal = s.repo.GetOrCreateWallet(userID, email)
 	}
 
-	trxCode := fmt.Sprintf("TOP-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
-	cleanChannel := strings.ToUpper(strings.ReplaceAll(channel, " ", ""))
-	refID := fmt.Sprintf("FC-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
-	if isPaymentGatewayChannel(channel) {
-		refID = fmt.Sprintf("VA-%s-%s-%06d", cleanChannel, time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
-	}
+	trxCode := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
+	refID := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("top-%d", time.Now().UnixNano()),
@@ -701,7 +697,7 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 	balanceAfter := wal.Balance
 	s.repo.SaveWallet(wal)
 
-	refundCode := fmt.Sprintf("REF-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
+	refundCode := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 	refundTrx := &WalletTransaction{
 		ID:              fmt.Sprintf("ref-%d", time.Now().UnixNano()),
 		TransactionCode: refundCode,
@@ -828,7 +824,7 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 
 	s.repo.SaveWallet(wal)
 
-	trxCode := fmt.Sprintf("ADJ-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
+	trxCode := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("adj-%d", time.Now().UnixNano()),
 		TransactionCode: trxCode,
@@ -1105,7 +1101,7 @@ func (s *walletService) Transfer(caller *supabase.User, token string, req Transf
 
 				senderTrxCode, _ := rpcRes["sender_transaction_code"].(string)
 				if senderTrxCode == "" {
-					senderTrxCode = fmt.Sprintf("TFO-%s-%06d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000)
+					senderTrxCode = fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 				}
 
 				senderTrx := &WalletTransaction{
@@ -1145,8 +1141,8 @@ func (s *walletService) Transfer(caller *supabase.User, token string, req Transf
 	targetWallet.Balance = targetBalanceAfter
 	s.repo.SaveWallet(targetWallet)
 
-	trxCodeOut := fmt.Sprintf("TFO-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
-	trxCodeIn := fmt.Sprintf("TFI-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
+	trxCodeOut := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
+	trxCodeIn := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 
 	senderTrx := &WalletTransaction{
 		ID:              "trx-" + trxCodeOut,

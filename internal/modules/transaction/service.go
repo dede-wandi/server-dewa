@@ -69,11 +69,11 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		return nil, fmt.Errorf("Produk %s saat ini sedang %s. Silakan coba produk lain.", prod.Name, prod.Status)
 	}
 
-	// 2. Generate Order Code & RefID Unik (Garansi Bebas Duplikasi)
+	// 2. Generate Order ID Numerik Bersih (Standar Gojek: YYMMDDHHMMSS + 4 digit acak)
 	var orderCode string
 	for attempt := 0; attempt < 10; attempt++ {
 		now := time.Now()
-		candidate := fmt.Sprintf("ORD-%s-%06d", now.Format("20060102150405"), rand.Intn(900000)+100000)
+		candidate := fmt.Sprintf("%s%04d", now.Format("060102150405"), rand.Intn(9000)+1000)
 		if _, exists := s.repo.GetOrderByCode(candidate); !exists {
 			orderCode = candidate
 			break
@@ -82,7 +82,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 	}
 	if orderCode == "" {
 		now := time.Now()
-		orderCode = fmt.Sprintf("ORD-%s-%09d", now.Format("20060102150405"), now.Nanosecond())
+		orderCode = fmt.Sprintf("%s%04d", now.Format("060102150405"), (now.Nanosecond()/100000)%9000+1000)
 	}
 
 	// 3. Potong Saldo Atomik via WalletService
@@ -323,17 +323,25 @@ func mapWalletTrxToOrder(trx *wallet.WalletTransaction) *Order {
 		if trx.TransactionCode != "" && !isUUID(trx.TransactionCode) {
 			orderCode = trx.TransactionCode
 		} else {
-			dateStr := trx.CreatedAt.Format("20060102")
-			if dateStr == "00010101" {
-				dateStr = time.Now().Format("20060102")
+			dateStr := trx.CreatedAt.Format("060102150405")
+			if dateStr == "010101000000" || strings.HasPrefix(dateStr, "010101") {
+				dateStr = time.Now().Format("060102150405")
 			}
-			// Gunakan hash deterministik dari ID agar stabil dan tidak acak/bentrok tiap kali dibuka
+			// Gunakan hash deterministik dari ID agar stabil numerik 16 digit
 			hash := uint32(0)
 			for _, c := range trx.ID {
 				hash = hash*31 + uint32(c)
 			}
-			suffix := 100000 + (hash % 900000)
-			orderCode = fmt.Sprintf("ORD-%s-%06d", dateStr, suffix)
+			suffix := 1000 + (hash % 9000)
+			orderCode = fmt.Sprintf("%s%04d", dateStr, suffix)
+		}
+	}
+
+	// Hilangkan prefix legacy seperti ORD-, TRX-, REF- agar seragam numerik murni
+	for _, pfx := range []string{"ORD-", "TRX-", "TOP-", "REF-", "ADJ-", "TFO-", "TFI-"} {
+		if strings.HasPrefix(strings.ToUpper(orderCode), pfx) {
+			orderCode = strings.ReplaceAll(orderCode[len(pfx):], "-", "")
+			break
 		}
 	}
 
