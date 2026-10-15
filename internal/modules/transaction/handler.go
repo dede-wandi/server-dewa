@@ -96,7 +96,7 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("✅ [ORDER SUCCESS] Code=%s, Product=%s, Target=%s, Price=Rp %d, SN=%s", order.OrderCode, order.ProductName, order.TargetAccount, order.Price, order.SerialNumber)
+	log.Printf("✅ [ORDER SUCCESS] Code=%s, Product=%s, Target=%s, Price=Rp %.0f, SN=%s", order.OrderCode, order.ProductName, order.TargetAccount, order.Price, order.SerialNumber)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",

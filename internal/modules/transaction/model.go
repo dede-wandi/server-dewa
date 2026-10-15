@@ -37,4 +37,5 @@ type Order struct {
 type CreateOrderRequest struct {
 	ProductCode   string `json:"product_code"`
 	TargetAccount string `json:"target_account"` // No HP / Meteran / ID
+	PIN           string `json:"pin,omitempty"`
 }

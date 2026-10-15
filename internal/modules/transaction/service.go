@@ -76,6 +76,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		Title:       fmt.Sprintf("Pembelian %s", prod.Name),
 		Description: fmt.Sprintf("Tujuan: %s (%s)", target, prod.Brand),
 		ReferenceID: orderCode,
+		PIN:         req.PIN,
 	}
 
 	wTrx, _, err := s.walletService.Pay(user.ID, user.Email, token, payReq)
