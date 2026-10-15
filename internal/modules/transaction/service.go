@@ -127,19 +127,19 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		Testing:      false,
 	}
 
-	log.Printf("🚀 [VENDOR DISPATCH] Meneruskan pesanan %s ke vendor %s (SKU=%s, Tujuan=%s)...", orderCode, vendorCode, sku, target)
+	log.Printf("🚀 [DISPATCH] Meneruskan pesanan %s ke provider (SKU=%s, Tujuan=%s)...", orderCode, sku, target)
 	vResp, err := vMgr.ProcessOrder(context.Background(), vReq)
 	if err != nil {
-		log.Printf("❌ [VENDOR FAILED] Transaksi %s gagal diteruskan ke vendor %s: %v", orderCode, vendorCode, err)
+		log.Printf("❌ [FAILED] Transaksi %s gagal: %v", orderCode, err)
 		order.Status = StatusFailed
-		order.ErrorMessage = fmt.Sprintf("Gagal dari provider %s: %v", vendorCode, err)
+		order.ErrorMessage = sanitizeErrorMessage(err.Error())
 
-		// Auto-refund ke saldo dompet jika vendor menolak / gagal
+		// Auto-refund ke saldo dompet jika provider menolak / gagal
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
 			Amount:          prod.Price,
 			TargetUserID:    user.ID,
-			Reason:          fmt.Sprintf("Auto-refund otomatis atas kegagalan order %s (%s): %v", orderCode, prod.Name, err),
+			Reason:          fmt.Sprintf("Auto-refund otomatis atas kegagalan order %s (%s)", orderCode, prod.Name),
 		}
 		refTrx, _, errRefund := s.walletService.Refund(user, token, refundReq)
 		if errRefund != nil {
@@ -149,21 +149,21 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		}
 		order.Status = StatusRefunded
 		s.repo.CreateOrder(order)
-		return order, fmt.Errorf("Transaksi gagal diproses oleh server vendor %s: %v. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", vendorCode, err)
+		return order, fmt.Errorf("%s. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", order.ErrorMessage)
 	}
 
-	log.Printf("📥 [VENDOR RESPONSE] Vendor=%s, Status=%s, SN=%s, Msg=%s", vendorCode, vResp.Status, vResp.SerialNumber, vResp.Message)
+	log.Printf("📥 [RESPONSE] Status=%s, SN=%s, Msg=%s", vResp.Status, vResp.SerialNumber, vResp.Message)
 
 	if vResp.Status == "FAILED" {
 		order.Status = StatusFailed
-		order.ErrorMessage = vResp.Message
+		order.ErrorMessage = sanitizeErrorMessage(vResp.Message)
 
-		// Auto-refund otomatis jika vendor menyatakan gagal
+		// Auto-refund otomatis jika provider menyatakan gagal
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
 			Amount:          prod.Price,
 			TargetUserID:    user.ID,
-			Reason:          fmt.Sprintf("Auto-refund atas penolakan vendor %s: %s", vendorCode, vResp.Message),
+			Reason:          fmt.Sprintf("Auto-refund atas penolakan order %s (%s)", orderCode, prod.Name),
 		}
 		refTrx, _, errRefund := s.walletService.Refund(user, token, refundReq)
 		if errRefund != nil {
@@ -173,7 +173,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		}
 		order.Status = StatusRefunded
 		s.repo.CreateOrder(order)
-		return order, fmt.Errorf("Transaksi ditolak oleh server vendor %s: %s. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", vendorCode, vResp.Message)
+		return order, fmt.Errorf("%s. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", order.ErrorMessage)
 	}
 
 	if vResp.Status == "SUCCESS" {
@@ -207,4 +207,24 @@ func (s *service) GetUserOrders(userID string) []*Order {
 
 func (s *service) GetAllOrders() []*Order {
 	return s.repo.GetAllOrders()
+}
+
+// sanitizeErrorMessage membersihkan dan menyamarkan seluruh respons error server / provider
+// agar nama vendor, IP server, atau endpoint teknis tidak bocor ke client pengguna
+func sanitizeErrorMessage(raw string) string {
+	upper := strings.ToUpper(raw)
+
+	if strings.Contains(upper, "SALDO") || strings.Contains(upper, "BALANCE") || strings.Contains(upper, "INSUFFICIENT") {
+		return "Saldo server tidak mencukupi"
+	}
+	if strings.Contains(upper, "STOK") || strings.Contains(upper, "KOSONG") || strings.Contains(upper, "HABIS") {
+		return "Stok produk sedang habis di server"
+	}
+	if strings.Contains(upper, "CUT OFF") || strings.Contains(upper, "CUTOFF") || strings.Contains(upper, "MAINTENANCE") || strings.Contains(upper, "GANGGUAN") {
+		return "Layanan produk sedang dalam pemeliharaan sistem"
+	}
+	if strings.Contains(upper, "INVALID") || strings.Contains(upper, "SALAH") || strings.Contains(upper, "TIDAK TERDAFTAR") || strings.Contains(upper, "BELUM TERDAFTAR") {
+		return "Nomor tujuan tidak terdaftar atau tidak valid"
+	}
+	return "Pesanan sedang tidak dapat diproses oleh server"
 }

@@ -223,7 +223,7 @@ func (d *DFlashAdapter) OrderProduct(ctx context.Context, req *VendorOrderReques
 		Price:        req.MaxPrice,
 		Status:       status,
 		SerialNumber: sn,
-		Message:      fmt.Sprintf("[%s] %s", usedCenter, msg),
+		Message:      msg,
 		RawResponse:  rawResp,
 		CreatedAt:    time.Now(),
 	}, nil
@@ -283,14 +283,18 @@ func (d *DFlashAdapter) parseDFlashResponse(bodyBytes []byte, usedCenter, refID,
 
 	if isFailed {
 		status = "FAILED"
-		if strings.Contains(upper, "STOK TIDAK CUKUP") || strings.Contains(upper, "SALDO TIDAK CUKUP") {
-			msg = "Stok / Saldo agen di server DFLASH tidak mencukupi"
-		} else if strings.Contains(upper, "SIGNATURE") {
-			msg = "Signature otentikasi DFLASH ditolak server vendor"
-		} else if strings.Contains(upper, "BELUM TERDAFTAR") || strings.Contains(upper, "WHITELIST") {
-			msg = "IP server belum terdaftar di whitelist DFLASH"
-		} else if strings.Contains(upper, "TDK DIPROSES") {
-			msg = "Transaksi tidak diproses oleh server DFLASH"
+		if strings.Contains(upper, "STOK TIDAK CUKUP") || strings.Contains(upper, "SALDO TIDAK CUKUP") || strings.Contains(upper, "SALDO") {
+			msg = "Saldo server tidak mencukupi"
+		} else if strings.Contains(upper, "STOK") || strings.Contains(upper, "KOSONG") || strings.Contains(upper, "HABIS") {
+			msg = "Stok produk sedang habis di server"
+		} else if strings.Contains(upper, "SIGNATURE") || strings.Contains(upper, "WHITELIST") || strings.Contains(upper, "BELUM TERDAFTAR") {
+			msg = "Layanan produk sedang dalam pemeliharaan sistem"
+		} else if strings.Contains(upper, "INVALID") || strings.Contains(upper, "SALAH") || strings.Contains(upper, "TIDAK TERDAFTAR") {
+			msg = "Nomor tujuan tidak terdaftar atau tidak valid"
+		} else if strings.Contains(upper, "TDK DIPROSES") || strings.Contains(upper, "CUT OFF") {
+			msg = "Layanan sedang dalam pemeliharaan atau cut-off"
+		} else {
+			msg = "Pesanan tidak dapat diproses oleh server"
 		}
 		return
 	}
@@ -318,7 +322,7 @@ func (d *DFlashAdapter) parseDFlashResponse(bodyBytes []byte, usedCenter, refID,
 
 	// Default jika respons vendor di luar dugaan: anggap FAILED agar aman bagi saldo user
 	status = "FAILED"
-	msg = fmt.Sprintf("Respons server DFLASH ditolak: %s", rawStr)
+	msg = "Pesanan tidak dapat diproses oleh server"
 	return
 }
 
@@ -401,7 +405,7 @@ func (d *DFlashAdapter) CheckStatus(ctx context.Context, refID string) (*VendorO
 		RefID:        refID,
 		Status:       status,
 		SerialNumber: sn,
-		Message:      fmt.Sprintf("[%s] %s", usedCenter, msg),
+		Message:      msg,
 		RawResponse:  rawResp,
 		CreatedAt:    time.Now(),
 	}, nil
