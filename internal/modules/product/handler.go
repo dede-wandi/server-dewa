@@ -21,6 +21,11 @@ func NewHandler(sbClient *supabase.Client) *Handler {
 	repo := NewCachedRepository(5 * time.Minute)
 	svc := NewService(repo, sbClient)
 
+	// Fetch live products from Supabase
+	go func() {
+		_, _ = repo.SyncFromSupabase(sbClient)
+	}()
+
 	return &Handler{
 		service: svc,
 	}
