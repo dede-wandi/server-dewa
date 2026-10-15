@@ -183,7 +183,7 @@ func (s *paymentChannelService) GetActiveChannels() ([]PaymentChannel, error) {
 	// Try fetching from Supabase DB
 	if s.sbClient != nil {
 		query := "status=in.(ACTIVE,COMING_SOON)&order=sort_order.asc"
-		if respBytes, err := s.sbClient.GetDB("payment_channels", query, ""); err == nil {
+		if respBytes, err := s.sbClient.GetDB("app_payment_channels", query, ""); err == nil {
 			var list []PaymentChannel
 			if err := json.Unmarshal(respBytes, &list); err == nil && len(list) > 0 {
 				return list, nil
@@ -211,7 +211,7 @@ func (s *paymentChannelService) GetAllChannelsAdmin() ([]PaymentChannel, error) 
 	// Try fetching from Supabase DB
 	if s.sbClient != nil {
 		query := "order=sort_order.asc"
-		if respBytes, err := s.sbClient.GetDB("payment_channels", query, ""); err == nil {
+		if respBytes, err := s.sbClient.GetDB("app_payment_channels", query, ""); err == nil {
 			var list []PaymentChannel
 			if err := json.Unmarshal(respBytes, &list); err == nil && len(list) > 0 {
 				return list, nil
@@ -234,7 +234,7 @@ func (s *paymentChannelService) GetAllChannelsAdmin() ([]PaymentChannel, error) 
 func (s *paymentChannelService) GetChannelByID(id string) (*PaymentChannel, error) {
 	if s.sbClient != nil {
 		query := "id=eq." + id
-		if respBytes, err := s.sbClient.GetDB("payment_channels", query, ""); err == nil {
+		if respBytes, err := s.sbClient.GetDB("app_payment_channels", query, ""); err == nil {
 			var list []PaymentChannel
 			if err := json.Unmarshal(respBytes, &list); err == nil && len(list) > 0 {
 				return &list[0], nil
@@ -350,7 +350,7 @@ func (s *paymentChannelService) CreateChannel(req CreatePaymentChannelRequest, t
 			"instructions":      newCh.Instructions,
 			"sort_order":        newCh.SortOrder,
 		}
-		_, _ = s.sbClient.PostDB("payment_channels", payload, "", token)
+		_, _ = s.sbClient.PostDB("app_payment_channels", payload, "", token)
 	}
 
 	s.mu.Lock()
@@ -448,7 +448,7 @@ func (s *paymentChannelService) UpdateChannel(id string, req UpdatePaymentChanne
 
 	if s.sbClient != nil && len(patchPayload) > 0 {
 		query := "id=eq." + target.ID
-		_, _ = s.sbClient.PatchDB("payment_channels", query, patchPayload, token)
+		_, _ = s.sbClient.PatchDB("app_payment_channels", query, patchPayload, token)
 	}
 
 	res := *target
@@ -476,7 +476,7 @@ func (s *paymentChannelService) DeleteChannel(id string, token string) error {
 
 	if s.sbClient != nil {
 		query := "id=eq." + targetID
-		_ = s.sbClient.DeleteDB("payment_channels", query, token)
+		_ = s.sbClient.DeleteDB("app_payment_channels", query, token)
 	}
 
 	return nil
