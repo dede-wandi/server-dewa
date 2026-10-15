@@ -28,6 +28,7 @@ type Notification struct {
 	Type        string     `json:"type"`        // 'TRANSACTION', 'PAYMENT', 'PROMO', 'ANNOUNCEMENT', 'SECURITY'
 	StatusBaca  string     `json:"status_baca"` // 'Belum Dibaca', 'Sudah Dibaca'
 	IsRead      bool       `json:"is_read"`
+	IsDeletable bool       `json:"is_deletable"` // false jika log login / keamanan permanen
 	ReferenceID string     `json:"reference_id,omitempty"`
 	ActionURL   string     `json:"action_url,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -40,6 +41,7 @@ type CreateNotificationRequest struct {
 	Title       string `json:"title"`
 	Message     string `json:"message"`
 	Type        string `json:"type"` // TRANSACTION, PAYMENT, PROMO, ANNOUNCEMENT, SECURITY
+	IsDeletable *bool  `json:"is_deletable,omitempty"`
 	ReferenceID string `json:"reference_id,omitempty"`
 	ActionURL   string `json:"action_url,omitempty"`
 }

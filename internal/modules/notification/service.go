@@ -51,7 +51,7 @@ func NewService(sbClient *supabase.Client) Service {
 // generateDefaultNotifications provides 20 realistic notifications in Indonesian
 func generateDefaultNotifications(userID string) []Notification {
 	now := time.Now()
-	return []Notification{
+	notifs := []Notification{
 		{
 			ID:          newUUID(),
 			UserID:      userID,
@@ -293,6 +293,15 @@ func generateDefaultNotifications(userID string) []Notification {
 			CreatedAt:   now.Add(-96 * time.Hour),
 		},
 	}
+
+	for i := range notifs {
+		if notifs[i].Type == string(TypeSecurity) {
+			notifs[i].IsDeletable = false
+		} else {
+			notifs[i].IsDeletable = true
+		}
+	}
+	return notifs
 }
 
 // GetUserNotifications returns max 20 notifications for the user with optional filters
@@ -480,9 +489,6 @@ func (s *notificationService) MarkAllAsRead(userID string) error {
 
 // DeleteNotification removes single notification for user
 func (s *notificationService) DeleteNotification(userID, id string) error {
-	queryParams := fmt.Sprintf("id=eq.%s&user_id=eq.%s", url.QueryEscape(id), url.QueryEscape(userID))
-	_ = s.sbClient.DeleteDB("notifications", queryParams, "")
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -490,6 +496,20 @@ func (s *notificationService) DeleteNotification(userID, id string) error {
 	if !ok {
 		list = generateDefaultNotifications(userID)
 	}
+
+	// Cek apakah notifikasi bertipe keamanan / log login
+	for _, n := range list {
+		if n.ID == id {
+			if n.Type == string(TypeSecurity) || !n.IsDeletable {
+				return errors.New("notifikasi keamanan login tidak dapat dihapus demi keamanan akun Anda")
+			}
+			break
+		}
+	}
+
+	// Hapus di database dengan proteksi type != SECURITY dan is_deletable != false
+	queryParams := fmt.Sprintf("id=eq.%s&user_id=eq.%s&type=neq.SECURITY&is_deletable=neq.false", url.QueryEscape(id), url.QueryEscape(userID))
+	_ = s.sbClient.DeleteDB("notifications", queryParams, "")
 
 	newList := make([]Notification, 0, len(list))
 	for _, n := range list {
@@ -501,15 +521,28 @@ func (s *notificationService) DeleteNotification(userID, id string) error {
 	return nil
 }
 
-// DeleteAllNotifications deletes all notifications for user
+// DeleteAllNotifications deletes all notifications for user except SECURITY / log login
 func (s *notificationService) DeleteAllNotifications(userID string) error {
-	queryParams := fmt.Sprintf("user_id=eq.%s", url.QueryEscape(userID))
+	// Hapus notifikasi di DB kecuali SECURITY
+	queryParams := fmt.Sprintf("user_id=eq.%s&type=neq.SECURITY&is_deletable=neq.false", url.QueryEscape(userID))
 	_ = s.sbClient.DeleteDB("notifications", queryParams, "")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.store[userID] = []Notification{}
+	list, ok := s.store[userID]
+	if !ok {
+		list = generateDefaultNotifications(userID)
+	}
+
+	// Pertahankan seluruh notifikasi keamanan dan log login
+	keptList := make([]Notification, 0)
+	for _, n := range list {
+		if n.Type == string(TypeSecurity) || !n.IsDeletable {
+			keptList = append(keptList, n)
+		}
+	}
+	s.store[userID] = keptList
 	return nil
 }
 
@@ -523,14 +556,24 @@ func (s *notificationService) CreateNotification(req CreateNotificationRequest) 
 		req.Type = string(TypeAnnouncement)
 	}
 
+	upperType := strings.ToUpper(req.Type)
+	isDeletable := true
+	if upperType == string(TypeSecurity) {
+		isDeletable = false
+	}
+	if req.IsDeletable != nil {
+		isDeletable = *req.IsDeletable
+	}
+
 	notif := Notification{
 		ID:          newUUID(),
 		UserID:      req.UserID,
 		Title:       req.Title,
 		Message:     req.Message,
-		Type:        strings.ToUpper(req.Type),
+		Type:        upperType,
 		StatusBaca:  StatusBelumDibaca,
 		IsRead:      false,
+		IsDeletable: isDeletable,
 		ReferenceID: req.ReferenceID,
 		ActionURL:   req.ActionURL,
 		CreatedAt:   time.Now(),

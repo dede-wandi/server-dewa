@@ -14,14 +14,27 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     is_read BOOLEAN DEFAULT false,
     reference_id VARCHAR(100), -- ID transaksi / kode pesanan / reference
     action_url TEXT,           -- Deep link URL (contoh: '/(tabs)/orders', '/(tabs)/wallet')
+    is_deletable BOOLEAN DEFAULT true, -- false untuk log login / keamanan (tidak dapat dihapus)
     created_at TIMESTAMPTZ DEFAULT now(),
     read_at TIMESTAMPTZ
 );
+
+-- Migration safety: Tambah kolom is_deletable jika tabel sudah pernah dibuat sebelumnya
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'notifications' AND column_name = 'is_deletable'
+    ) THEN 
+        ALTER TABLE public.notifications ADD COLUMN is_deletable BOOLEAN DEFAULT true;
+    END IF;
+END $$;
 
 -- Indexing for fast fetch (latest 20 notifications per user)
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON public.notifications(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON public.notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_notifications_type ON public.notifications(type);
+CREATE INDEX IF NOT EXISTS idx_notifications_deletable ON public.notifications(is_deletable);
 
 -- Enable RLS
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
@@ -41,12 +54,12 @@ CREATE POLICY "Users can update own notifications" ON public.notifications
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
--- 3. Policy User Delete: Pengguna dapat menghapus notifikasi miliknya sendiri
+-- 3. Policy User Delete: Pengguna hanya dapat menghapus notifikasi yang is_deletable = true dan type != 'SECURITY'
 DROP POLICY IF EXISTS "Users can delete own notifications" ON public.notifications;
 CREATE POLICY "Users can delete own notifications" ON public.notifications
     FOR DELETE
     TO authenticated
-    USING (auth.uid() = user_id);
+    USING (auth.uid() = user_id AND (is_deletable IS NULL OR is_deletable = true) AND type != 'SECURITY');
 
 -- 4. Policy Service Role: Backend service_role memiliki akses penuh (CRUD)
 DROP POLICY IF EXISTS "Service role full access notifications" ON public.notifications;
@@ -55,3 +68,4 @@ CREATE POLICY "Service role full access notifications" ON public.notifications
     TO service_role
     USING (true)
     WITH CHECK (true);
+

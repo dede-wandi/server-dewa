@@ -80,14 +80,14 @@ func New(cfg *config.Config) *chi.Mux {
 	})
 
 	// Initialize Handlers
-	authHandler := auth.NewHandler(sbClient)
+	notificationHandler := notification.NewHandler(sbClient)
+	authHandler := auth.NewHandler(sbClient, notificationHandler.GetService())
 	productHandler := product.NewHandler(sbClient)
 	walletHandler := wallet.NewHandler(sbClient)
 	transactionHandler := transaction.NewHandler(walletHandler.GetWalletService(), productHandler.GetService(), sbClient)
 	adminHandler := admin.NewHandler(sbClient, walletHandler)
 	bannerHandler := banner.NewHandler(sbClient)
 	articleHandler := article.NewHandler(sbClient)
-	notificationHandler := notification.NewHandler(sbClient)
 	paymentChannelHandler := payment_channel.NewHandler(sbClient)
 
 	r.Route("/api/v1", func(api chi.Router) {

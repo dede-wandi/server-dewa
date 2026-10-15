@@ -2,22 +2,28 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/domain/role"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
+	"github.com/dede-wandi/server-dewa/internal/modules/notification"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
-	sb *supabase.Client
+	sb           *supabase.Client
+	notifService notification.Service
 }
 
-func NewHandler(sb *supabase.Client) *Handler {
-	return &Handler{sb: sb}
+func NewHandler(sb *supabase.Client, notifService notification.Service) *Handler {
+	return &Handler{
+		sb:           sb,
+		notifService: notifService,
+	}
 }
 
 func (h *Handler) Routes() chi.Router {
@@ -61,8 +67,10 @@ func (h *Handler) Routes() chi.Router {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	DeviceName string `json:"device_name,omitempty"`
+	DeviceOS   string `json:"device_os,omitempty"`
 }
 
 type RegisterRequest struct {
@@ -163,6 +171,85 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// Deteksi Device & IP untuk Notifikasi Keamanan Login Pengguna
+	go func(userUUID string, loginReq LoginRequest, userAgent string, remoteAddr string, xForwardedFor string, xRealIP string) {
+		// 1. Ekstrak IP Address
+		clientIP := strings.TrimSpace(xForwardedFor)
+		if clientIP != "" {
+			parts := strings.Split(clientIP, ",")
+			clientIP = strings.TrimSpace(parts[0])
+		}
+		if clientIP == "" {
+			clientIP = strings.TrimSpace(xRealIP)
+		}
+		if clientIP == "" {
+			clientIP = remoteAddr
+			if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
+				clientIP = clientIP[:idx]
+			}
+		}
+		if clientIP == "" || clientIP == "[" || clientIP == "127.0.0.1" || clientIP == "::1" {
+			clientIP = "Local / VPN"
+		}
+
+		// 2. Ekstrak Device & OS
+		deviceName := strings.TrimSpace(loginReq.DeviceName)
+		deviceOS := strings.TrimSpace(loginReq.DeviceOS)
+
+		if deviceName == "" {
+			if strings.Contains(userAgent, "iPhone") {
+				deviceName = "Apple iPhone"
+			} else if strings.Contains(userAgent, "Android") {
+				deviceName = "Perangkat Android"
+			} else if strings.Contains(userAgent, "Macintosh") {
+				deviceName = "Apple Mac"
+			} else if strings.Contains(userAgent, "Windows") {
+				deviceName = "Windows PC"
+			} else if strings.Contains(userAgent, "Linux") {
+				deviceName = "Linux Desktop"
+			} else {
+				deviceName = "Aplikasi DewaCell"
+			}
+		}
+
+		if deviceOS == "" {
+			if strings.Contains(userAgent, "iPhone") {
+				deviceOS = "iOS"
+			} else if strings.Contains(userAgent, "Android") {
+				deviceOS = "Android"
+			} else if strings.Contains(userAgent, "Mac OS") {
+				deviceOS = "macOS"
+			} else if strings.Contains(userAgent, "Windows") {
+				deviceOS = "Windows"
+			} else {
+				deviceOS = "Mobile Client"
+			}
+		}
+
+		// 3. Format waktu WIB
+		wib := time.FixedZone("WIB", 7*3600)
+		loginTimeStr := time.Now().In(wib).Format("02 Jan 2006, 15:04 WIB")
+
+		// 4. Catat notifikasi keamanan login (tidak dapat dihapus)
+		title := fmt.Sprintf("🛡️ Login Berhasil: %s", deviceName)
+		msg := fmt.Sprintf("Akun DewaCell Anda baru saja login dari perangkat %s (%s) pada %s (IP: %s). Catatan keamanan ini tidak dapat dihapus demi perlindungan akun Anda.",
+			deviceName, deviceOS, loginTimeStr, clientIP)
+
+		isDeletable := false
+		refID := fmt.Sprintf("LOG-%s", time.Now().Format("20060102150405"))
+
+		if h.notifService != nil {
+			_, _ = h.notifService.CreateNotification(notification.CreateNotificationRequest{
+				UserID:      userUUID,
+				Title:       title,
+				Message:     msg,
+				Type:        string(notification.TypeSecurity),
+				IsDeletable: &isDeletable,
+				ReferenceID: refID,
+			})
+		}
+	}(authResp.User.ID, req, r.UserAgent(), r.RemoteAddr, r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"))
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
