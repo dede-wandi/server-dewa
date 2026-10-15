@@ -69,8 +69,21 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		return nil, fmt.Errorf("Produk %s saat ini sedang %s. Silakan coba produk lain.", prod.Name, prod.Status)
 	}
 
-	// 2. Generate Order Code Unik
-	orderCode := fmt.Sprintf("ORD-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	// 2. Generate Order Code & RefID Unik (Garansi Bebas Duplikasi)
+	var orderCode string
+	for attempt := 0; attempt < 10; attempt++ {
+		now := time.Now()
+		candidate := fmt.Sprintf("ORD-%s-%06d", now.Format("20060102150405"), rand.Intn(900000)+100000)
+		if _, exists := s.repo.GetOrderByCode(candidate); !exists {
+			orderCode = candidate
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+	if orderCode == "" {
+		now := time.Now()
+		orderCode = fmt.Sprintf("ORD-%s-%09d", now.Format("20060102150405"), now.Nanosecond())
+	}
 
 	// 3. Potong Saldo Atomik via WalletService
 	payReq := wallet.PayRequest{
@@ -213,20 +226,50 @@ func (s *service) GetOrderDetail(orderCode string) (*Order, error) {
 	return nil, errors.New("Order transaksi tidak ditemukan")
 }
 
+func deduplicateOrders(orders []*Order) []*Order {
+	seenCodes := make(map[string]bool)
+	seenIDs := make(map[string]bool)
+	seenTrxCodes := make(map[string]bool)
+	result := make([]*Order, 0, len(orders))
+
+	for _, o := range orders {
+		if o == nil {
+			continue
+		}
+		code := strings.ToUpper(strings.TrimSpace(o.OrderCode))
+		id := strings.ToUpper(strings.TrimSpace(o.ID))
+		trxCode := strings.ToUpper(strings.TrimSpace(o.WalletTrxCode))
+
+		// Abaikan jika kode pesanan atau ID sudah pernah dimasukkan
+		if code != "" && seenCodes[code] {
+			continue
+		}
+		if id != "" && seenIDs[id] {
+			continue
+		}
+		if trxCode != "" && seenTrxCodes[trxCode] {
+			continue
+		}
+
+		if code != "" {
+			seenCodes[code] = true
+		}
+		if id != "" {
+			seenIDs[id] = true
+		}
+		if trxCode != "" {
+			seenTrxCodes[trxCode] = true
+		}
+
+		result = append(result, o)
+	}
+	return result
+}
+
 func (s *service) GetUserOrders(userID string) []*Order {
 	memOrders := s.repo.GetOrdersByUser(userID)
-	known := make(map[string]bool)
-	for _, o := range memOrders {
-		if o != nil {
-			known[strings.ToUpper(o.OrderCode)] = true
-			if o.WalletTrxCode != "" {
-				known[strings.ToUpper(o.WalletTrxCode)] = true
-			}
-		}
-	}
-
-	result := make([]*Order, len(memOrders))
-	copy(result, memOrders)
+	var combined []*Order
+	combined = append(combined, memOrders...)
 
 	// Gabungkan secara cerdas dengan mutasi transaksi yang tercatat di Supabase / WalletService
 	if s.walletService != nil {
@@ -235,43 +278,20 @@ func (s *service) GetUserOrders(userID string) []*Order {
 			if trx == nil {
 				continue
 			}
-			codeKey := strings.ToUpper(trx.TransactionCode)
-			refKey := strings.ToUpper(trx.ReferenceID)
-
-			if (codeKey != "" && known[codeKey]) || (refKey != "" && known[refKey]) {
-				continue
-			}
-
 			mapped := mapWalletTrxToOrder(trx)
 			if mapped != nil {
-				result = append(result, mapped)
-				if codeKey != "" {
-					known[codeKey] = true
-				}
-				if refKey != "" {
-					known[refKey] = true
-				}
+				combined = append(combined, mapped)
 			}
 		}
 	}
 
-	return result
+	return deduplicateOrders(combined)
 }
 
 func (s *service) GetAllOrders() []*Order {
 	memOrders := s.repo.GetAllOrders()
-	known := make(map[string]bool)
-	for _, o := range memOrders {
-		if o != nil {
-			known[strings.ToUpper(o.OrderCode)] = true
-			if o.WalletTrxCode != "" {
-				known[strings.ToUpper(o.WalletTrxCode)] = true
-			}
-		}
-	}
-
-	result := make([]*Order, len(memOrders))
-	copy(result, memOrders)
+	var combined []*Order
+	combined = append(combined, memOrders...)
 
 	if s.walletService != nil {
 		walletTrxs := s.walletService.GetAllTransactions()
@@ -279,27 +299,14 @@ func (s *service) GetAllOrders() []*Order {
 			if trx == nil {
 				continue
 			}
-			codeKey := strings.ToUpper(trx.TransactionCode)
-			refKey := strings.ToUpper(trx.ReferenceID)
-
-			if (codeKey != "" && known[codeKey]) || (refKey != "" && known[refKey]) {
-				continue
-			}
-
 			mapped := mapWalletTrxToOrder(trx)
 			if mapped != nil {
-				result = append(result, mapped)
-				if codeKey != "" {
-					known[codeKey] = true
-				}
-				if refKey != "" {
-					known[refKey] = true
-				}
+				combined = append(combined, mapped)
 			}
 		}
 	}
 
-	return result
+	return deduplicateOrders(combined)
 }
 
 func mapWalletTrxToOrder(trx *wallet.WalletTransaction) *Order {
@@ -320,7 +327,12 @@ func mapWalletTrxToOrder(trx *wallet.WalletTransaction) *Order {
 			if dateStr == "00010101" {
 				dateStr = time.Now().Format("20060102")
 			}
-			suffix := rand.Intn(900000) + 100000
+			// Gunakan hash deterministik dari ID agar stabil dan tidak acak/bentrok tiap kali dibuka
+			hash := uint32(0)
+			for _, c := range trx.ID {
+				hash = hash*31 + uint32(c)
+			}
+			suffix := 100000 + (hash % 900000)
 			orderCode = fmt.Sprintf("ORD-%s-%06d", dateStr, suffix)
 		}
 	}

@@ -51,6 +51,12 @@ func (r *MemoryRepository) loadFromFile() {
 			continue
 		}
 		code := strings.ToUpper(strings.TrimSpace(o.OrderCode))
+		if code == "" {
+			continue
+		}
+		if _, exists := r.orders[code]; exists {
+			continue // Skip duplicates from file
+		}
 		o.OrderCode = code
 		r.orders[code] = o
 		r.ordersByUser[o.UserID] = append(r.ordersByUser[o.UserID], o)
@@ -72,6 +78,13 @@ func (r *MemoryRepository) CreateOrder(order *Order) {
 
 	code := strings.ToUpper(strings.TrimSpace(order.OrderCode))
 	order.OrderCode = code
+
+	// If order already exists with this code, update in-place to prevent duplicates
+	if existing, exists := r.orders[code]; exists {
+		*existing = *order
+		r.saveToFile()
+		return
+	}
 
 	r.orders[code] = order
 	r.ordersByUser[order.UserID] = append([]*Order{order}, r.ordersByUser[order.UserID]...)

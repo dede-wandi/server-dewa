@@ -142,8 +142,45 @@ func (s *walletService) GetBalance(userID, email, token string) (*Wallet, error)
 	return wal, nil
 }
 
+func deduplicateTransactions(trxs []*WalletTransaction) []*WalletTransaction {
+	seenCodes := make(map[string]bool)
+	seenIDs := make(map[string]bool)
+	result := make([]*WalletTransaction, 0, len(trxs))
+
+	for _, t := range trxs {
+		if t == nil {
+			continue
+		}
+		code := strings.ToUpper(strings.TrimSpace(t.TransactionCode))
+		id := strings.ToUpper(strings.TrimSpace(t.ID))
+
+		if code != "" && seenCodes[code] {
+			continue
+		}
+		if id != "" && seenIDs[id] {
+			continue
+		}
+
+		if code != "" {
+			seenCodes[code] = true
+		}
+		if id != "" {
+			seenIDs[id] = true
+		}
+
+		result = append(result, t)
+	}
+	return result
+}
+
 func (s *walletService) GetHistory(userID string) []*WalletTransaction {
-	// 1. Try Supabase RPC get_user_wallet_transactions
+	var combined []*WalletTransaction
+
+	// 1. In-memory transactions
+	memTrxs := s.repo.GetTransactionsByUser(userID)
+	combined = append(combined, memTrxs...)
+
+	// 2. Try Supabase transactions
 	if s.sbClient != nil {
 		rpcPayload := map[string]interface{}{
 			"p_user_id": userID,
@@ -152,21 +189,21 @@ func (s *walletService) GetHistory(userID string) []*WalletTransaction {
 		if respBytes, err := s.sbClient.CallRPC("get_user_wallet_transactions", rpcPayload, ""); err == nil {
 			var dbTrxs []*WalletTransaction
 			if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
-				return dbTrxs
+				combined = append(combined, dbTrxs...)
 			}
-		}
-
-		// 2. Direct query fallback via PostgREST
-		filter := fmt.Sprintf("user_id=eq.%s&order=created_at.desc&limit=50", userID)
-		if respBytes, err := s.sbClient.GetDB("app_wallet_transactions", filter, ""); err == nil {
-			var dbTrxs []*WalletTransaction
-			if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
-				return dbTrxs
+		} else {
+			// Direct query fallback via PostgREST
+			filter := fmt.Sprintf("user_id=eq.%s&order=created_at.desc&limit=50", userID)
+			if respBytes, err := s.sbClient.GetDB("app_wallet_transactions", filter, ""); err == nil {
+				var dbTrxs []*WalletTransaction
+				if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+					combined = append(combined, dbTrxs...)
+				}
 			}
 		}
 	}
 
-	return s.repo.GetTransactionsByUser(userID)
+	return deduplicateTransactions(combined)
 }
 
 func (s *walletService) Pay(userID, email, token string, req PayRequest) (*WalletTransaction, *Wallet, error) {
@@ -272,7 +309,7 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 	balanceAfter := wal.Balance
 	s.repo.SaveWallet(wal)
 
-	trxCode := fmt.Sprintf("TRX-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	trxCode := fmt.Sprintf("TRX-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("trx-%d", time.Now().UnixNano()),
 		TransactionCode: trxCode,
@@ -378,11 +415,11 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 		wal = s.repo.GetOrCreateWallet(userID, email)
 	}
 
-	trxCode := fmt.Sprintf("TOP-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	trxCode := fmt.Sprintf("TOP-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
 	cleanChannel := strings.ToUpper(strings.ReplaceAll(channel, " ", ""))
-	refID := fmt.Sprintf("FC-%d", time.Now().Unix())
+	refID := fmt.Sprintf("FC-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
 	if isPaymentGatewayChannel(channel) {
-		refID = fmt.Sprintf("VA-%s-%d", cleanChannel, time.Now().Unix())
+		refID = fmt.Sprintf("VA-%s-%s-%06d", cleanChannel, time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
 	}
 
 	trx := &WalletTransaction{
@@ -664,7 +701,7 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 	balanceAfter := wal.Balance
 	s.repo.SaveWallet(wal)
 
-	refundCode := fmt.Sprintf("REF-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	refundCode := fmt.Sprintf("REF-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
 	refundTrx := &WalletTransaction{
 		ID:              fmt.Sprintf("ref-%d", time.Now().UnixNano()),
 		TransactionCode: refundCode,
@@ -791,7 +828,7 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 
 	s.repo.SaveWallet(wal)
 
-	trxCode := fmt.Sprintf("ADJ-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
+	trxCode := fmt.Sprintf("ADJ-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("adj-%d", time.Now().UnixNano()),
 		TransactionCode: trxCode,
@@ -851,7 +888,7 @@ func (s *walletService) SetUserLock(userID string, locked bool) (*Wallet, error)
 }
 
 func (s *walletService) GetAllTransactions() []*WalletTransaction {
-	return s.repo.GetAllTransactions()
+	return deduplicateTransactions(s.repo.GetAllTransactions())
 }
 
 func (s *walletService) GetStats() map[string]interface{} {
@@ -1108,8 +1145,8 @@ func (s *walletService) Transfer(caller *supabase.User, token string, req Transf
 	targetWallet.Balance = targetBalanceAfter
 	s.repo.SaveWallet(targetWallet)
 
-	trxCodeOut := fmt.Sprintf("TFO-%s-%06d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000)
-	trxCodeIn := fmt.Sprintf("TFI-%s-%06d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000)
+	trxCodeOut := fmt.Sprintf("TFO-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
+	trxCodeIn := fmt.Sprintf("TFI-%s-%06d", time.Now().Format("20060102150405"), rand.Intn(900000)+100000)
 
 	senderTrx := &WalletTransaction{
 		ID:              "trx-" + trxCodeOut,

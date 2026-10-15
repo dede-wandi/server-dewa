@@ -133,7 +133,24 @@ func (r *MemoryRepository) SetLock(userID string, locked bool) (*Wallet, error) 
 
 // addTransactionInternal assumes mutex is already locked
 func (r *MemoryRepository) addTransactionInternal(trx *WalletTransaction) {
-	r.transactions[trx.UserID] = append([]*WalletTransaction{trx}, r.transactions[trx.UserID]...)
+	if trx == nil {
+		return
+	}
+
+	// Check if this transaction already exists to prevent duplicate entries
+	userTrxs := r.transactions[trx.UserID]
+	for i, existing := range userTrxs {
+		if existing == nil {
+			continue
+		}
+		if (trx.ID != "" && strings.EqualFold(existing.ID, trx.ID)) ||
+			(trx.TransactionCode != "" && strings.EqualFold(existing.TransactionCode, trx.TransactionCode)) {
+			userTrxs[i] = trx
+			return
+		}
+	}
+
+	r.transactions[trx.UserID] = append([]*WalletTransaction{trx}, userTrxs...)
 
 	// O(1) indexing for lightning fast lookups
 	if trx.TransactionCode != "" {
