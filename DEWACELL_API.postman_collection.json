@@ -17,6 +17,11 @@
       "type": "string"
     },
     {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "admin_token",
       "value": "",
       "type": "string"
@@ -29,6 +34,11 @@
     {
       "key": "banner_id",
       "value": "9749cc26-1986-4238-86da-a05f38d3870f",
+      "type": "string"
+    },
+    {
+      "key": "notification_id",
+      "value": "",
       "type": "string"
     }
   ],
@@ -93,7 +103,10 @@
                       "    pm.collectionVariables.set('auth_token', token);",
                       "    pm.environment.set('auth_token', token);",
                       "    pm.globals.set('auth_token', token);",
-                      "    console.log('✅ Token User otomatis tersimpan:', token);",
+                      "    pm.collectionVariables.set('access_token', token);",
+                      "    pm.environment.set('access_token', token);",
+                      "    pm.globals.set('access_token', token);",
+                      "    console.log('✅ Token User otomatis tersimpan (auth_token & access_token):', token);",
                       "}"
                     ],
                     "type": "text/javascript"
@@ -110,7 +123,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"email\": \"user@gmail.com\",\n  \"password\": \"123456\"\n}"
+                  "raw": "{\n  \"email\": \"user@gmail.com\",\n  \"password\": \"123456\",\n  \"device_id\": \"dev_irlvr00b_1792025400729\",\n  \"device_name\": \"Redmi 2312DRA50G\",\n  \"device_os\": \"Android 16\",\n  \"location\": \"Bogor, Java\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/auth/login",
@@ -124,7 +137,7 @@
                     "login"
                   ]
                 },
-                "description": "Login akun pelanggan/merchant. Token JWT akan otomatis tersimpan di variabel koleksi {{auth_token}}."
+                "description": "Login akun pelanggan/merchant dengan informasi perangkat dan lokasi otomatis memicu pencatatan log keamanan. Token JWT otomatis tersimpan di {{auth_token}} dan {{access_token}}."
               }
             },
             {
@@ -1076,12 +1089,30 @@
           "item": [
             {
               "name": "Get Notifications (Max 20 with Unread Count)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.data && jsonData.data.length > 0) {",
+                      "    var firstNotif = jsonData.data[0];",
+                      "    pm.collectionVariables.set('notification_id', firstNotif.id);",
+                      "    pm.environment.set('notification_id', firstNotif.id);",
+                      "    pm.globals.set('notification_id', firstNotif.id);",
+                      "    console.log('✅ notification_id otomatis tersimpan:', firstNotif.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
               "request": {
                 "method": "GET",
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{auth_token}}",
                     "type": "text"
                   }
                 ],
@@ -1113,7 +1144,7 @@
                     }
                   ]
                 },
-                "description": "Mengambil daftar maksimal 20 notifikasi terbaru pengguna beserta total notifikasi belum dibaca (`total_unread`)."
+                "description": "Mengambil daftar maksimal 20 notifikasi terbaru pengguna beserta total notifikasi belum dibaca (`total_unread`). ID notifikasi pertama otomatis tersimpan di {{notification_id}}."
               }
             },
             {
@@ -1123,7 +1154,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{auth_token}}",
                     "type": "text"
                   }
                 ],
@@ -1150,7 +1181,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{auth_token}}",
                     "type": "text"
                   }
                 ],
@@ -1177,7 +1208,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{auth_token}}",
                     "type": "text"
                   }
                 ],
@@ -1203,7 +1234,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{auth_token}}",
                     "type": "text"
                   }
                 ],
@@ -1229,7 +1260,7 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{access_token}}",
+                    "value": "Bearer {{auth_token}}",
                     "type": "text"
                   }
                 ],
