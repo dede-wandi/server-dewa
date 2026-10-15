@@ -759,6 +759,26 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 	balanceAfter := wal.Balance
 	s.repo.SaveWallet(wal)
 
+	cleanProdName := origTitle
+	for _, pfx := range []string{"Pembelian ", "Refund Dana: ", "Refund "} {
+		cleanProdName = strings.TrimPrefix(cleanProdName, pfx)
+	}
+	refundTitle := fmt.Sprintf("Refund %s", cleanProdName)
+
+	targetDesc := ""
+	if origTrx != nil {
+		targetDesc = strings.TrimSpace(origTrx.Description)
+		if strings.HasPrefix(targetDesc, "Tujuan: ") {
+			targetDesc = strings.TrimPrefix(targetDesc, "Tujuan: ")
+			if idx := strings.Index(targetDesc, " ("); idx != -1 {
+				targetDesc = targetDesc[:idx]
+			}
+		}
+	}
+	if targetDesc == "" {
+		targetDesc = reason
+	}
+
 	refundCode := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 	refundTrx := &WalletTransaction{
 		ID:              fmt.Sprintf("ref-%d", time.Now().UnixNano()),
@@ -769,8 +789,8 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 		Amount:          refundAmount,
 		BalanceBefore:   balanceBefore,
 		BalanceAfter:    balanceAfter,
-		Title:           fmt.Sprintf("Refund Dana: %s", origTitle),
-		Description:     fmt.Sprintf("Pengembalian dana saldo atas transaksi %s. Alasan: %s", req.TransactionCode, reason),
+		Title:           refundTitle,
+		Description:     targetDesc,
 		ReferenceID:     req.TransactionCode,
 		AdminID:         caller.ID,
 		AdminEmail:      caller.Email,

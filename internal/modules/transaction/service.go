@@ -89,8 +89,8 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 	payReq := wallet.PayRequest{
 		Amount:      prod.Price,
 		Category:    wallet.CategoryPayment,
-		Title:       fmt.Sprintf("Pembelian %s", prod.Name),
-		Description: fmt.Sprintf("Tujuan: %s (%s)", target, prod.Brand),
+		Title:       prod.Name,
+		Description: target,
 		ReferenceID: orderCode,
 		PIN:         req.PIN,
 	}
