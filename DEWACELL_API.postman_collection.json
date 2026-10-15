@@ -40,6 +40,16 @@
       "key": "notification_id",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "c1000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "menu_id",
+      "value": "m1000000-0000-0000-0000-000000000001",
+      "type": "string"
     }
   ],
   "item": [
@@ -1280,6 +1290,160 @@
             }
           ],
           "description": "Layanan notifikasi pengguna meliputi transaksi, pembayaran, promo, pengumuman, dan keamanan akun. Maksimal 20 item per user dengan dukungan status bahasa Indonesia (Belum Dibaca/Sudah Dibaca)."
+        },
+        {
+          "name": "App Menus",
+          "item": [
+            {
+              "name": "Get Home Active Menus",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/menus?placement=HOME_GRID",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "menus"
+                  ],
+                  "query": [
+                    {
+                      "key": "placement",
+                      "value": "HOME_GRID",
+                      "description": "Filter menu berdasarkan placement (HOME_GRID, QUICK_ACTION, DRAWER, FOOTER)"
+                    }
+                  ]
+                },
+                "description": "Mengambil daftar menu layanan aktif untuk grid home screen aplikasi mobile (Pulsa, Paket Data, PLN, E-Money, dll)."
+              }
+            },
+            {
+              "name": "Get Menu Detail",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/menus/{{menu_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "menus",
+                    "{{menu_id}}"
+                  ]
+                },
+                "description": "Mengambil detail menu beserta data kategori terkait yang ditautkan."
+              }
+            }
+          ],
+          "description": "Menu layanan dinamis untuk aplikasi pengguna yang dapat dikustomisasi target aksi dan rutenya oleh admin."
+        },
+        {
+          "name": "App Categories",
+          "item": [
+            {
+              "name": "Get Categories Tree (Hierarki Bercabang Lengkap)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories?tree=true",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories"
+                  ],
+                  "query": [
+                    {
+                      "key": "tree",
+                      "value": "true",
+                      "description": "Tampilkan dalam struktur hierarki bersarang (Level 1 -> Sub Level 2 -> Sub-sub Level 3)"
+                    }
+                  ]
+                },
+                "description": "Mengambil semua kategori layanan berhierarki lengkap dengan percabangan children (Level 1 -> Sub Level 2 -> Sub-sub Level 3)."
+              }
+            },
+            {
+              "name": "Get Root Categories (Level 1)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories?level=1",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories"
+                  ],
+                  "query": [
+                    {
+                      "key": "level",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "Mengambil daftar kategori utama (Level 1 / Root) seperti Pulsa & Paket Data, Listrik PLN, Uang Elektronik, Voucher Game."
+              }
+            },
+            {
+              "name": "Get Sub-Categories (Filter by Parent ID)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories?parent_id={{category_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories"
+                  ],
+                  "query": [
+                    {
+                      "key": "parent_id",
+                      "value": "{{category_id}}"
+                    }
+                  ]
+                },
+                "description": "Mengambil sub-kategori di bawah ID kategori induk tertentu."
+              }
+            },
+            {
+              "name": "Get Category Detail (by ID / Code / Slug)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories/cat_pulsa_data",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories",
+                    "cat_pulsa_data"
+                  ]
+                },
+                "description": "Mengambil detail kategori beserta daftar sub-kategori langsung (immediate children)."
+              }
+            }
+          ],
+          "description": "Kategori layanan bertingkat / hierarki bercabang (Kategori -> Sub-Kategori -> Sub-Sub Kategori). Terpisah dari tabel POS categories."
         }
       ]
     },
@@ -2748,6 +2912,326 @@
             }
           ],
           "description": "Pengelolaan channel pembayaran dinamis multi-vendor (Fund Credit, Duitku, DANA, Midtrans, dll)."
+        },
+        {
+          "name": "Manage App Menus",
+          "item": [
+            {
+              "name": "Admin Get All Menus",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/menus",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "menus"
+                  ]
+                },
+                "description": "Admin mengambil semua menu layanan aplikasi (aktif maupun non-aktif)."
+              }
+            },
+            {
+              "name": "Admin Create Menu",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"menu_paket_sms\",\n  \"name\": \"Paket SMS\",\n  \"subtitle\": \"Nelpon & SMS murah sepuasnya\",\n  \"category_id\": \"c1000000-0000-0000-0000-000000000001\",\n  \"action_type\": \"CATEGORY\",\n  \"target_url\": \"/service/sms\",\n  \"icon_type\": \"IONICONS\",\n  \"icon_name\": \"chatbox-ellipses-outline\",\n  \"bg_color\": \"#FEF2F2\",\n  \"icon_color\": \"#DC2626\",\n  \"badge\": \"HEMAT\",\n  \"badge_color\": \"#DC2626\",\n  \"placement\": \"HOME_GRID\",\n  \"sort_order\": 9,\n  \"is_active\": true,\n  \"is_coming_soon\": false\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/menus",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "menus"
+                  ]
+                },
+                "description": "Admin menambahkan menu layanan baru. Admin bisa mengarahkan menu ke kategori tertentu (action_type: CATEGORY) atau rute aplikasi (action_type: ROUTE)."
+              }
+            },
+            {
+              "name": "Admin Get Menu Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/menus/{{menu_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "menus",
+                    "{{menu_id}}"
+                  ]
+                },
+                "description": "Admin melihat detail menu layanan beserta kategori tertaut."
+              }
+            },
+            {
+              "name": "Admin Update Menu",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Paket SMS & Nelpon\",\n  \"badge\": \"PROMO\",\n  \"sort_order\": 8,\n  \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/menus/{{menu_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "menus",
+                    "{{menu_id}}"
+                  ]
+                },
+                "description": "Admin mengupdate data menu layanan (target_url, category_id, icon, warna, badge, urutan, status aktif)."
+              }
+            },
+            {
+              "name": "Admin Delete Menu",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/menus/{{menu_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "menus",
+                    "{{menu_id}}"
+                  ]
+                },
+                "description": "Admin menghapus menu layanan dari aplikasi pengguna."
+              }
+            }
+          ],
+          "description": "CRUD Pengelolaan Menu Layanan Pengguna: Admin bisa membuat menu baru, mengarahkan ke kategori spesifik, mengganti ikon & badge secara dinamis."
+        },
+        {
+          "name": "Manage App Categories",
+          "item": [
+            {
+              "name": "Admin Get All Categories (Tree Mode)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/categories?tree=true",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "categories"
+                  ],
+                  "query": [
+                    {
+                      "key": "tree",
+                      "value": "true"
+                    }
+                  ]
+                },
+                "description": "Admin mengambil struktur seluruh kategori dalam bentuk pohon (Tree) bercabang (Kategori -> Sub-kategori -> Sub-sub kategori)."
+              }
+            },
+            {
+              "name": "Admin Create Category (Bercabang)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"parent_id\": \"c2000000-0000-0000-0000-000000000001\",\n  \"name\": \"Paket Roaming Internasional\",\n  \"code\": \"sub3_tsel_roaming\",\n  \"slug\": \"paket-roaming-internasional-telkomsel\",\n  \"description\": \"Paket internet dan nelpon haji, umroh, dan luar negeri\",\n  \"icon\": \"airplane-outline\",\n  \"badge\": \"HOT\",\n  \"level\": 3,\n  \"sort_order\": 5,\n  \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/categories",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "categories"
+                  ]
+                },
+                "description": "Admin membuat kategori baru. Jika parent_id diisi ID kategori level 1 maka menjadi sub-kategori (level 2). Jika parent_id diisi ID level 2 maka menjadi sub-sub-kategori (level 3)."
+              }
+            },
+            {
+              "name": "Admin Get Category Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/categories/{{category_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "categories",
+                    "{{category_id}}"
+                  ]
+                },
+                "description": "Admin melihat detail kategori beserta anak cabangnya (children)."
+              }
+            },
+            {
+              "name": "Admin Update Category",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Paket Roaming Haji & Umroh\",\n  \"badge\": \"HEMAT\",\n  \"sort_order\": 1\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/categories/{{category_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "categories",
+                    "{{category_id}}"
+                  ]
+                },
+                "description": "Admin memperbarui data kategori/sub-kategori."
+              }
+            },
+            {
+              "name": "Admin Delete Category",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/categories/{{category_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "categories",
+                    "{{category_id}}"
+                  ]
+                },
+                "description": "Admin menghapus kategori. Menghapus kategori induk otomatis menghapus seluruh sub-kategori di bawahnya (cascade)."
+              }
+            }
+          ],
+          "description": "CRUD Pengelolaan Kategori Layanan Bertingkat / Hierarki Bercabang: Bebas membuat cabang sub-kategori hingga sub-sub level tak terbatas."
         }
       ]
     }

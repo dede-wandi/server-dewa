@@ -8,6 +8,8 @@ import (
 	"github.com/dede-wandi/server-dewa/internal/config"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
 	"github.com/dede-wandi/server-dewa/internal/modules/admin"
+	"github.com/dede-wandi/server-dewa/internal/modules/app_category"
+	"github.com/dede-wandi/server-dewa/internal/modules/app_menu"
 	"github.com/dede-wandi/server-dewa/internal/modules/article"
 	"github.com/dede-wandi/server-dewa/internal/modules/auth"
 	"github.com/dede-wandi/server-dewa/internal/modules/banner"
@@ -89,6 +91,8 @@ func New(cfg *config.Config) *chi.Mux {
 	bannerHandler := banner.NewHandler(sbClient)
 	articleHandler := article.NewHandler(sbClient)
 	paymentChannelHandler := payment_channel.NewHandler(sbClient)
+	appCategoryHandler := app_category.NewHandler(sbClient)
+	appMenuHandler := app_menu.NewHandler(sbClient, appCategoryHandler.GetService())
 
 	r.Route("/api/v1", func(api chi.Router) {
 		// Auth endpoints (public login/register/refresh, protected /me)
@@ -96,6 +100,13 @@ func New(cfg *config.Config) *chi.Mux {
 
 		// Public catalog browsing (fast cached responses)
 		api.Mount("/products", productHandler.Routes())
+
+		// Dynamic service menus for mobile app home screen & grid
+		api.Mount("/menus", appMenuHandler.Routes())
+
+		// Dynamic multi-tier categories (root, sub, sub-sub branching)
+		api.Mount("/categories", appCategoryHandler.Routes())
+		api.Mount("/app-categories", appCategoryHandler.Routes())
 
 		// Public banners & promos (for mobile home screen & app)
 		api.Mount("/banners", bannerHandler.Routes())
@@ -117,6 +128,9 @@ func New(cfg *config.Config) *chi.Mux {
 			adminRouter.Use(middleware.RequireRoles("admin", "superadmin"))
 			adminRouter.Mount("/", adminHandler.Routes())
 			adminRouter.Post("/products/sync", productHandler.SyncProducts)
+			adminRouter.Mount("/menus", appMenuHandler.AdminRoutes())
+			adminRouter.Mount("/categories", appCategoryHandler.AdminRoutes())
+			adminRouter.Mount("/app-categories", appCategoryHandler.AdminRoutes())
 			adminRouter.Mount("/banners", bannerHandler.AdminRoutes())
 			adminRouter.Mount("/promos", bannerHandler.AdminRoutes())
 			adminRouter.Mount("/articles", articleHandler.AdminRoutes())
