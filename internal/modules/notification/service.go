@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -75,26 +77,15 @@ func (s *notificationService) GetUserNotifications(userID, filterType, filterSta
 	parts = append(parts, fmt.Sprintf("limit=%d", limit))
 	queryParams := strings.Join(parts, "&")
 
-	// Try PostgREST
+	// 1. Ambil dari database PostgREST jika tersedia
+	var dbNotifs []Notification
 	respBytes, err := s.sbClient.GetDB("notifications", queryParams, "")
 	if err == nil {
-		var notifs []Notification
-		if err := json.Unmarshal(respBytes, &notifs); err == nil {
-			// Count total unread
-			unreadCount := 0
-			for _, n := range notifs {
-				if !n.IsRead {
-					unreadCount++
-				}
-			}
-			return notifs, unreadCount, nil
-		}
+		_ = json.Unmarshal(respBytes, &dbNotifs)
 	}
 
-	// Fallback in-memory
+	// 2. Ambil dari in-memory store
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	userList, ok := s.store[userID]
 	if !s.userInitialized[userID] && !ok {
 		userList = make([]Notification, 0)
@@ -120,24 +111,50 @@ func (s *notificationService) GetUserNotifications(userID, filterType, filterSta
 		s.store[userID] = userList
 		s.userInitialized[userID] = true
 	}
+	s.mu.Unlock()
 
-	// Filter in-memory
+	// 3. Gabungkan DB dan In-Memory (Memory diprioritaskan untuk notifikasi terbaru/login log realtime)
+	mergedMap := make(map[string]bool)
+	var allItems []Notification
+
+	// Masukkan dari in-memory terlebih dahulu
+	for _, n := range userList {
+		if !mergedMap[n.ID] {
+			mergedMap[n.ID] = true
+			allItems = append(allItems, n)
+		}
+	}
+
+	// Masukkan dari DB jika belum ada di memory
+	for _, n := range dbNotifs {
+		if !mergedMap[n.ID] {
+			mergedMap[n.ID] = true
+			allItems = append(allItems, n)
+		}
+	}
+
+	// Urutkan created_at terbaru paling atas
+	sort.Slice(allItems, func(i, j int) bool {
+		return allItems[i].CreatedAt.After(allItems[j].CreatedAt)
+	})
+
+	// 4. Hitung unread total dan terapkan filter
 	filtered := make([]Notification, 0)
 	unreadTotal := 0
 
-	for _, n := range userList {
+	for _, n := range allItems {
 		if !n.IsRead {
 			unreadTotal++
 		}
 
-		// Type filter
+		// Filter tipe
 		if filterType != "" && strings.ToUpper(filterType) != "ALL" && strings.ToUpper(filterType) != "SEMUA" {
 			if !strings.EqualFold(n.Type, filterType) {
 				continue
 			}
 		}
 
-		// Status filter
+		// Filter status
 		if statusLower == "unread" || statusLower == "belum dibaca" || statusLower == "belum_dibaca" {
 			if n.IsRead {
 				continue
@@ -374,20 +391,25 @@ func (s *notificationService) CreateNotification(req CreateNotificationRequest) 
 		CreatedAt:   time.Now(),
 	}
 
-	// Persist to DB if userID is valid UUID
-	_, _ = s.sbClient.PostDB("notifications", notif, "", "")
-
-	// Update in-memory
+	// 1. Update in-memory store terlebih dahulu agar segera tersedia tanpa delay
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	list := s.store[req.UserID]
 	list = append([]Notification{notif}, list...)
 	if len(list) > 20 {
-		list = list[:20] // Keep max 20
+		list = list[:20] // Maksimal 20 item
 	}
 	s.store[req.UserID] = list
 	s.userInitialized[req.UserID] = true
+	s.mu.Unlock()
+
+	// 2. Persist ke DB PostgREST secara background agar tidak memblokir respon
+	go func(n Notification) {
+		if _, err := s.sbClient.PostDB("notifications", n, "", ""); err != nil {
+			log.Printf("[NotificationService] Note: PostDB notifications error (%v), stored safely in-memory", err)
+		} else {
+			log.Printf("[NotificationService] ✅ Successfully persisted notification to DB (%s)", n.ID)
+		}
+	}(notif)
 
 	return &notif, nil
 }

@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -174,124 +175,133 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deteksi Device, Lokasi & IP untuk Audit Log Database & Notifikasi Keamanan Pengguna
-	go func(userUUID string, userEmail string, loginReq LoginRequest, userAgent string, remoteAddr string, xForwardedFor string, xRealIP string, xDeviceID string, xDeviceName string, xDeviceOS string, xDeviceLocation string) {
-		// 1. Ekstrak IP Address
-		clientIP := strings.TrimSpace(xForwardedFor)
-		if clientIP != "" {
-			parts := strings.Split(clientIP, ",")
-			clientIP = strings.TrimSpace(parts[0])
+	// 1. Ekstrak IP Address
+	clientIP := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if clientIP != "" {
+		parts := strings.Split(clientIP, ",")
+		clientIP = strings.TrimSpace(parts[0])
+	}
+	if clientIP == "" {
+		clientIP = strings.TrimSpace(r.Header.Get("X-Real-IP"))
+	}
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+		if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
+			clientIP = clientIP[:idx]
 		}
-		if clientIP == "" {
-			clientIP = strings.TrimSpace(xRealIP)
-		}
-		if clientIP == "" {
-			clientIP = remoteAddr
-			if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
-				clientIP = clientIP[:idx]
-			}
-		}
-		if clientIP == "" || clientIP == "[" || clientIP == "127.0.0.1" || clientIP == "::1" {
-			clientIP = "Local / VPN"
-		}
+	}
+	if clientIP == "" || clientIP == "[" || clientIP == "127.0.0.1" || clientIP == "::1" {
+		clientIP = "Local / VPN"
+	}
 
-		// 2. Ekstrak Device ID, Name & OS
-		deviceID := strings.TrimSpace(loginReq.DeviceID)
-		if deviceID == "" {
-			deviceID = strings.TrimSpace(xDeviceID)
-		}
-		if deviceID == "" {
-			deviceID = "unknown-device"
-		}
+	// 2. Ekstrak Device ID, Name & OS
+	deviceID := strings.TrimSpace(req.DeviceID)
+	if deviceID == "" {
+		deviceID = strings.TrimSpace(r.Header.Get("X-Device-ID"))
+	}
+	if deviceID == "" {
+		deviceID = "unknown-device"
+	}
 
-		deviceName := strings.TrimSpace(loginReq.DeviceName)
-		if deviceName == "" {
-			deviceName = strings.TrimSpace(xDeviceName)
+	deviceName := strings.TrimSpace(req.DeviceName)
+	if deviceName == "" {
+		deviceName = strings.TrimSpace(r.Header.Get("X-Device-Name"))
+	}
+
+	deviceOS := strings.TrimSpace(req.DeviceOS)
+	if deviceOS == "" {
+		deviceOS = strings.TrimSpace(r.Header.Get("X-Device-OS"))
+	}
+
+	location := strings.TrimSpace(req.Location)
+	if location == "" {
+		location = strings.TrimSpace(r.Header.Get("X-Device-Location"))
+	}
+
+	userAgent := r.UserAgent()
+	if deviceName == "" {
+		if strings.Contains(userAgent, "iPhone") {
+			deviceName = "Apple iPhone"
+		} else if strings.Contains(userAgent, "Android") {
+			deviceName = "Perangkat Android"
+		} else if strings.Contains(userAgent, "Macintosh") {
+			deviceName = "Apple Mac"
+		} else if strings.Contains(userAgent, "Windows") {
+			deviceName = "Windows PC"
+		} else if strings.Contains(userAgent, "Linux") {
+			deviceName = "Linux Desktop"
+		} else {
+			deviceName = "Perangkat Pengguna"
 		}
+	}
 
-		deviceOS := strings.TrimSpace(loginReq.DeviceOS)
-		if deviceOS == "" {
-			deviceOS = strings.TrimSpace(xDeviceOS)
+	if deviceOS == "" {
+		if strings.Contains(userAgent, "iPhone") {
+			deviceOS = "iOS"
+		} else if strings.Contains(userAgent, "Android") {
+			deviceOS = "Android"
+		} else if strings.Contains(userAgent, "Mac OS") {
+			deviceOS = "macOS"
+		} else if strings.Contains(userAgent, "Windows") {
+			deviceOS = "Windows"
+		} else {
+			deviceOS = "Mobile Client"
 		}
+	}
 
-		location := strings.TrimSpace(loginReq.Location)
-		if location == "" {
-			location = strings.TrimSpace(xDeviceLocation)
+	// 3. Format waktu WIB
+	wib := time.FixedZone("WIB", 7*3600)
+	loginTimeStr := time.Now().In(wib).Format("02 Jan 2006, 15:04 WIB")
+
+	// 4. Catat notifikasi keamanan login secara sinkron (langsung tersedia sebelum respon 200 dikirim)
+	locSuffix := ""
+	if location != "" {
+		locSuffix = fmt.Sprintf(" di %s", location)
+	}
+
+	title := fmt.Sprintf("🛡️ Aktivitas Login: %s", deviceName)
+	msg := fmt.Sprintf("Akun Anda baru saja login dari perangkat %s (%s)%s pada %s (IP: %s). Jika Anda tidak merasa melakukan aktivitas ini atau perangkat tidak dikenali, segera amankan akun Anda dengan mengganti PIN atau Password.",
+		deviceName, deviceOS, locSuffix, loginTimeStr, clientIP)
+
+	isDeletable := true
+	refID := fmt.Sprintf("LOG-%s", time.Now().Format("20060102150405"))
+
+	if h.notifService != nil {
+		_, notifErr := h.notifService.CreateNotification(notification.CreateNotificationRequest{
+			UserID:      authResp.User.ID,
+			Title:       title,
+			Message:     msg,
+			Type:        string(notification.TypeSecurity),
+			IsDeletable: &isDeletable,
+			ReferenceID: refID,
+			ActionURL:   "/account/pin",
+		})
+		if notifErr != nil {
+			log.Printf("[AuthHandler] Warning: Gagal membuat notifikasi login: %v", notifErr)
+		} else {
+			log.Printf("[AuthHandler] ✅ Notifikasi aktivitas login berhasil dibuat untuk user %s", authResp.User.ID)
 		}
+	}
 
-		if deviceName == "" {
-			if strings.Contains(userAgent, "iPhone") {
-				deviceName = "Apple iPhone"
-			} else if strings.Contains(userAgent, "Android") {
-				deviceName = "Perangkat Android"
-			} else if strings.Contains(userAgent, "Macintosh") {
-				deviceName = "Apple Mac"
-			} else if strings.Contains(userAgent, "Windows") {
-				deviceName = "Windows PC"
-			} else if strings.Contains(userAgent, "Linux") {
-				deviceName = "Linux Desktop"
-			} else {
-				deviceName = "Perangkat Pengguna"
-			}
-		}
-
-		if deviceOS == "" {
-			if strings.Contains(userAgent, "iPhone") {
-				deviceOS = "iOS"
-			} else if strings.Contains(userAgent, "Android") {
-				deviceOS = "Android"
-			} else if strings.Contains(userAgent, "Mac OS") {
-				deviceOS = "macOS"
-			} else if strings.Contains(userAgent, "Windows") {
-				deviceOS = "Windows"
-			} else {
-				deviceOS = "Mobile Client"
-			}
-		}
-
-		// 3. Format waktu WIB
-		wib := time.FixedZone("WIB", 7*3600)
-		loginTimeStr := time.Now().In(wib).Format("02 Jan 2006, 15:04 WIB")
-
-		// 4. Catat ke tabel database public.user_login_logs
+	// 5. Simpan user_login_logs ke database Supabase di background goroutine
+	go func(uID, uEmail, dID, dName, dOS, loc, cIP, uAgent, token string) {
 		loginLogRecord := map[string]interface{}{
-			"user_id":     userUUID,
-			"email":       userEmail,
-			"device_id":   deviceID,
-			"device_name": deviceName,
-			"device_os":   deviceOS,
-			"location":    location,
-			"ip_address":  clientIP,
-			"user_agent":  userAgent,
+			"user_id":     uID,
+			"email":       uEmail,
+			"device_id":   dID,
+			"device_name": dName,
+			"device_os":   dOS,
+			"location":    loc,
+			"ip_address":  cIP,
+			"user_agent":  uAgent,
 			"created_at":  time.Now(),
 		}
-		_, _ = h.sb.PostDB("user_login_logs", loginLogRecord, "", "")
-
-		// 5. Catat notifikasi keamanan login
-		locSuffix := ""
-		if location != "" {
-			locSuffix = fmt.Sprintf(" di %s", location)
+		if _, err := h.sb.PostDB("user_login_logs", loginLogRecord, "", token); err != nil {
+			if _, err2 := h.sb.PostDB("user_login_logs", loginLogRecord, "", ""); err2 != nil {
+				log.Printf("[AuthHandler] Note: Gagal menyimpan user_login_logs ke DB (%v)", err2)
+			}
 		}
-
-		title := fmt.Sprintf("🛡️ Aktivitas Login: %s", deviceName)
-		msg := fmt.Sprintf("Akun Anda baru saja login dari perangkat %s (%s)%s pada %s (IP: %s). Jika Anda tidak merasa melakukan aktivitas ini atau perangkat tidak dikenali, segera amankan akun Anda dengan mengganti PIN atau Password.",
-			deviceName, deviceOS, locSuffix, loginTimeStr, clientIP)
-
-		isDeletable := true
-		refID := fmt.Sprintf("LOG-%s", time.Now().Format("20060102150405"))
-
-		if h.notifService != nil {
-			_, _ = h.notifService.CreateNotification(notification.CreateNotificationRequest{
-				UserID:      userUUID,
-				Title:       title,
-				Message:     msg,
-				Type:        string(notification.TypeSecurity),
-				IsDeletable: &isDeletable,
-				ReferenceID: refID,
-				ActionURL:   "/account/pin",
-			})
-		}
-	}(authResp.User.ID, cleanEmail, req, r.UserAgent(), r.RemoteAddr, r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"), r.Header.Get("X-Device-ID"), r.Header.Get("X-Device-Name"), r.Header.Get("X-Device-OS"), r.Header.Get("X-Device-Location"))
+	}(authResp.User.ID, cleanEmail, deviceID, deviceName, deviceOS, location, clientIP, userAgent, authResp.AccessToken)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
