@@ -95,19 +95,22 @@ func (s *menuService) GetActiveMenus(placement string) ([]AppMenu, error) {
 	queryParams := fmt.Sprintf("is_active=eq.true&placement=eq.%s&order=sort_order.asc,name.asc", url.QueryEscape(strings.ToUpper(placement)))
 	respBytes, err := s.sbClient.GetDB("app_menus", queryParams, "")
 	if err != nil {
-		log.Printf("[MenuService] GetActiveMenus DB query failed: %v. Using in-memory fallback.", err)
-		return s.filterFallback(true, placement), nil
+		log.Printf("[MenuService] GetActiveMenus DB query failed: %v", err)
+		return []AppMenu{}, nil
 	}
 
 	var menus []AppMenu
-	if err := json.Unmarshal(respBytes, &menus); err != nil || len(menus) == 0 {
-		return s.filterFallback(true, placement), nil
+	if err := json.Unmarshal(respBytes, &menus); err != nil {
+		return []AppMenu{}, nil
 	}
 
 	for i := range menus {
 		s.populateCategory(&menus[i])
 	}
 
+	if menus == nil {
+		menus = []AppMenu{}
+	}
 	return menus, nil
 }
 
@@ -122,19 +125,22 @@ func (s *menuService) GetAllMenus(placement string) ([]AppMenu, error) {
 
 	respBytes, err := s.sbClient.GetDB("app_menus", queryParams, "")
 	if err != nil {
-		log.Printf("[MenuService] GetAllMenus DB query failed: %v. Using in-memory fallback.", err)
-		return s.filterFallback(false, placement), nil
+		log.Printf("[MenuService] GetAllMenus DB query failed: %v", err)
+		return []AppMenu{}, nil
 	}
 
 	var menus []AppMenu
-	if err := json.Unmarshal(respBytes, &menus); err != nil || len(menus) == 0 {
-		return s.filterFallback(false, placement), nil
+	if err := json.Unmarshal(respBytes, &menus); err != nil {
+		return []AppMenu{}, nil
 	}
 
 	for i := range menus {
 		s.populateCategory(&menus[i])
 	}
 
+	if menus == nil {
+		menus = []AppMenu{}
+	}
 	return menus, nil
 }
 
@@ -148,16 +154,6 @@ func (s *menuService) GetMenuByID(id string) (*AppMenu, error) {
 			menu := list[0]
 			s.populateCategory(&menu)
 			return &menu, nil
-		}
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, m := range s.fallback {
-		if m.ID == id || m.Code == id {
-			item := m
-			s.populateCategory(&item)
-			return &item, nil
 		}
 	}
 
@@ -218,12 +214,18 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 		isComingSoon = *req.IsComingSoon
 	}
 
+	var categoryID *string
+	if req.CategoryID != nil && strings.TrimSpace(*req.CategoryID) != "" {
+		clean := strings.TrimSpace(*req.CategoryID)
+		categoryID = &clean
+	}
+
 	newMenu := AppMenu{
 		ID:           newID,
 		Code:         code,
 		Name:         req.Name,
 		Subtitle:     req.Subtitle,
-		CategoryID:   req.CategoryID,
+		CategoryID:   categoryID,
 		ActionType:   actionType,
 		TargetURL:    req.TargetURL,
 		IconType:     iconType,
@@ -246,7 +248,6 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 		"code":           newMenu.Code,
 		"name":           newMenu.Name,
 		"subtitle":       newMenu.Subtitle,
-		"category_id":    newMenu.CategoryID,
 		"action_type":    newMenu.ActionType,
 		"target_url":     newMenu.TargetURL,
 		"icon_type":      newMenu.IconType,
@@ -261,23 +262,24 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 		"is_active":      newMenu.IsActive,
 		"is_coming_soon": newMenu.IsComingSoon,
 	}
+	if categoryID != nil {
+		payload["category_id"] = *categoryID
+	} else {
+		payload["category_id"] = nil
+	}
 
 	respBytes, err := s.sbClient.PostDB("app_menus", payload, "return=representation", "")
-	if err == nil {
-		var created []AppMenu
-		if err := json.Unmarshal(respBytes, &created); err == nil && len(created) > 0 {
-			newMenu = created[0]
-		}
-	} else {
-		log.Printf("[MenuService] PostDB failed: %v. Storing in-memory fallback.", err)
+	if err != nil {
+		log.Printf("[MenuService] PostDB failed: %v", err)
+		return nil, fmt.Errorf("gagal menyimpan menu ke database: %w", err)
+	}
+
+	var created []AppMenu
+	if err := json.Unmarshal(respBytes, &created); err == nil && len(created) > 0 {
+		newMenu = created[0]
 	}
 
 	s.populateCategory(&newMenu)
-
-	s.mu.Lock()
-	s.fallback = append(s.fallback, newMenu)
-	s.mu.Unlock()
-
 	return &newMenu, nil
 }
 
@@ -305,8 +307,14 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 		payload["subtitle"] = req.Subtitle
 	}
 	if req.CategoryID != nil {
-		current.CategoryID = req.CategoryID
-		payload["category_id"] = req.CategoryID
+		if strings.TrimSpace(*req.CategoryID) == "" {
+			current.CategoryID = nil
+			payload["category_id"] = nil
+		} else {
+			clean := strings.TrimSpace(*req.CategoryID)
+			current.CategoryID = &clean
+			payload["category_id"] = clean
+		}
 	}
 	if req.ActionType != "" {
 		current.ActionType = req.ActionType
@@ -363,26 +371,17 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 
 	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
 	respBytes, err := s.sbClient.PatchDB("app_menus", queryParams, payload, "")
-	if err == nil {
-		var updated []AppMenu
-		if err := json.Unmarshal(respBytes, &updated); err == nil && len(updated) > 0 {
-			current = &updated[0]
-		}
-	} else {
-		log.Printf("[MenuService] PatchDB failed: %v. Updating in-memory fallback.", err)
+	if err != nil {
+		log.Printf("[MenuService] PatchDB failed: %v", err)
+		return nil, fmt.Errorf("gagal mengupdate menu di database: %w", err)
+	}
+
+	var updated []AppMenu
+	if err := json.Unmarshal(respBytes, &updated); err == nil && len(updated) > 0 {
+		current = &updated[0]
 	}
 
 	s.populateCategory(current)
-
-	s.mu.Lock()
-	for i, m := range s.fallback {
-		if m.ID == id {
-			s.fallback[i] = *current
-			break
-		}
-	}
-	s.mu.Unlock()
-
 	return current, nil
 }
 
@@ -391,20 +390,8 @@ func (s *menuService) DeleteMenu(id string) error {
 	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
 	err := s.sbClient.DeleteDB("app_menus", queryParams, "")
 	if err != nil {
-		log.Printf("[MenuService] DeleteDB failed: %v. Deleting from memory fallback.", err)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	idx := -1
-	for i, m := range s.fallback {
-		if m.ID == id {
-			idx = i
-			break
-		}
-	}
-	if idx != -1 {
-		s.fallback = append(s.fallback[:idx], s.fallback[idx+1:]...)
+		log.Printf("[MenuService] DeleteDB failed: %v", err)
+		return fmt.Errorf("gagal menghapus menu dari database: %w", err)
 	}
 
 	return nil

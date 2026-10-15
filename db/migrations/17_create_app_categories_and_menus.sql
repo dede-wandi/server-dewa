@@ -27,56 +27,51 @@ CREATE TABLE IF NOT EXISTS public.app_categories (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_app_categories_parent ON public.app_categories(parent_id);
-CREATE INDEX IF NOT EXISTS idx_app_categories_level ON public.app_categories(level);
-CREATE INDEX IF NOT EXISTS idx_app_categories_active ON public.app_categories(is_active);
-CREATE INDEX IF NOT EXISTS idx_app_categories_sort ON public.app_categories(sort_order ASC);
-CREATE INDEX IF NOT EXISTS idx_app_categories_slug ON public.app_categories(slug);
+CREATE INDEX IF NOT EXISTS idx_app_categories_parent ON public.app_categories (parent_id);
+
+CREATE INDEX IF NOT EXISTS idx_app_categories_level ON public.app_categories (level);
+
+CREATE INDEX IF NOT EXISTS idx_app_categories_active ON public.app_categories (is_active);
+
+CREATE INDEX IF NOT EXISTS idx_app_categories_sort ON public.app_categories (sort_order ASC);
+
+CREATE INDEX IF NOT EXISTS idx_app_categories_slug ON public.app_categories (slug);
 
 -- Enable RLS
 ALTER TABLE public.app_categories ENABLE ROW LEVEL SECURITY;
 
--- Policy Public Read untuk app_categories
 DROP POLICY IF EXISTS "Public read app categories" ON public.app_categories;
-CREATE POLICY "Public read app categories" ON public.app_categories
-    FOR SELECT
-    TO anon, authenticated
-    USING (is_active = true);
 
--- Policy Full Access untuk service_role
 DROP POLICY IF EXISTS "Service role full access app categories" ON public.app_categories;
-CREATE POLICY "Service role full access app categories" ON public.app_categories
-    FOR ALL
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
 
--- Policy Admin Full Access
 DROP POLICY IF EXISTS "Admin write app categories" ON public.app_categories;
-CREATE POLICY "Admin write app categories" ON public.app_categories
-    FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
 
+DROP POLICY IF EXISTS "app_categories_full_policy" ON public.app_categories;
+
+-- Policy Full Access untuk backend API, anon, authenticated & service_role
+CREATE POLICY "app_categories_full_policy" ON public.app_categories FOR ALL TO anon,
+authenticated,
+service_role USING (true)
+WITH
+    CHECK (true);
 
 -- 2. Tabel Menu Layanan Pengguna (App Service Menus)
 CREATE TABLE IF NOT EXISTS public.app_menus (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
     code VARCHAR(50) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     subtitle VARCHAR(150) DEFAULT '',
-    category_id UUID NULL REFERENCES public.app_categories(id) ON DELETE SET NULL,
+    category_id UUID NULL REFERENCES public.app_categories (id) ON DELETE SET NULL,
     action_type VARCHAR(50) NOT NULL DEFAULT 'CATEGORY', -- 'CATEGORY', 'ROUTE', 'WEBVIEW', 'DIALOG'
     target_url TEXT DEFAULT '',
-    icon_type VARCHAR(30) DEFAULT 'IONICONS',            -- 'IONICONS', 'URL', 'SVG', 'EMOJI'
+    icon_type VARCHAR(30) DEFAULT 'IONICONS', -- 'IONICONS', 'URL', 'SVG', 'EMOJI'
     icon_name VARCHAR(100) DEFAULT 'grid-outline',
     icon_url TEXT DEFAULT '',
     bg_color VARCHAR(30) DEFAULT '#EFF6FF',
     icon_color VARCHAR(30) DEFAULT '#2563EB',
-    badge VARCHAR(50) DEFAULT '',                       -- 'PROMO', 'NEW', 'HOT', 'CASHBACK', 'HEMAT'
+    badge VARCHAR(50) DEFAULT '', -- 'PROMO', 'NEW', 'HOT', 'CASHBACK', 'HEMAT'
     badge_color VARCHAR(30) DEFAULT '#EF4444',
-    placement VARCHAR(50) DEFAULT 'HOME_GRID',          -- 'HOME_GRID', 'QUICK_ACTION', 'DRAWER', 'FOOTER'
+    placement VARCHAR(50) DEFAULT 'HOME_GRID', -- 'HOME_GRID', 'QUICK_ACTION', 'DRAWER', 'FOOTER'
     sort_order INT NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT true,
     is_coming_soon BOOLEAN NOT NULL DEFAULT false,
@@ -84,37 +79,33 @@ CREATE TABLE IF NOT EXISTS public.app_menus (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_app_menus_category ON public.app_menus(category_id);
-CREATE INDEX IF NOT EXISTS idx_app_menus_placement ON public.app_menus(placement);
-CREATE INDEX IF NOT EXISTS idx_app_menus_active ON public.app_menus(is_active);
-CREATE INDEX IF NOT EXISTS idx_app_menus_sort ON public.app_menus(sort_order ASC);
+CREATE INDEX IF NOT EXISTS idx_app_menus_category ON public.app_menus (category_id);
+
+CREATE INDEX IF NOT EXISTS idx_app_menus_placement ON public.app_menus (placement);
+
+CREATE INDEX IF NOT EXISTS idx_app_menus_active ON public.app_menus (is_active);
+
+CREATE INDEX IF NOT EXISTS idx_app_menus_sort ON public.app_menus (sort_order ASC);
 
 -- Enable RLS
 ALTER TABLE public.app_menus ENABLE ROW LEVEL SECURITY;
 
--- Policy Public Read untuk app_menus
 DROP POLICY IF EXISTS "Public read app menus" ON public.app_menus;
-CREATE POLICY "Public read app menus" ON public.app_menus
-    FOR SELECT
-    TO anon, authenticated
-    USING (is_active = true);
 
--- Policy Full Access untuk service_role
 DROP POLICY IF EXISTS "Service role full access app menus" ON public.app_menus;
-CREATE POLICY "Service role full access app menus" ON public.app_menus
-    FOR ALL
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
 
--- Policy Admin Full Access
 DROP POLICY IF EXISTS "Admin write app menus" ON public.app_menus;
-CREATE POLICY "Admin write app menus" ON public.app_menus
-    FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "app_menus_full_policy" ON public.app_menus;
+
+-- Policy Full Access untuk backend API, anon, authenticated & service_role
+CREATE POLICY "app_menus_full_policy" ON public.app_menus FOR ALL TO anon,
+authenticated,
+service_role USING (true)
+WITH
+    CHECK (true);
 
 -- Reload Schema Cache PostgREST
 NOTIFY pgrst, 'reload schema';
+
 NOTIFY pgrst, 'reload config';

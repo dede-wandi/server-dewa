@@ -155,29 +155,17 @@ func (s *categoryService) GetActiveCategories(parentID string, level int, asTree
 
 	respBytes, err := s.sbClient.GetDB("app_categories", queryParams, "")
 	if err != nil {
-		log.Printf("[CategoryService] GetActiveCategories DB query failed: %v. Using fallback in-memory.", err)
-		list := s.filterFallback(true, parentID, level)
-		if asTree {
-			return buildTree(list, parentID), nil
-		}
-		return list, nil
+		log.Printf("[CategoryService] GetActiveCategories DB query failed: %v", err)
+		return []AppCategory{}, nil
 	}
 
 	var categories []AppCategory
 	if err := json.Unmarshal(respBytes, &categories); err != nil {
-		list := s.filterFallback(true, parentID, level)
-		if asTree {
-			return buildTree(list, parentID), nil
-		}
-		return list, nil
+		return []AppCategory{}, nil
 	}
 
-	if len(categories) == 0 {
-		list := s.filterFallback(true, parentID, level)
-		if asTree {
-			return buildTree(list, parentID), nil
-		}
-		return list, nil
+	if categories == nil {
+		categories = []AppCategory{}
 	}
 
 	if asTree {
@@ -207,29 +195,17 @@ func (s *categoryService) GetAllCategories(parentID string, level int, asTree bo
 
 	respBytes, err := s.sbClient.GetDB("app_categories", queryParams, "")
 	if err != nil {
-		log.Printf("[CategoryService] GetAllCategories DB query failed: %v. Using fallback in-memory.", err)
-		list := s.filterFallback(false, parentID, level)
-		if asTree {
-			return buildTree(list, parentID), nil
-		}
-		return list, nil
+		log.Printf("[CategoryService] GetAllCategories DB query failed: %v", err)
+		return []AppCategory{}, nil
 	}
 
 	var categories []AppCategory
 	if err := json.Unmarshal(respBytes, &categories); err != nil {
-		list := s.filterFallback(false, parentID, level)
-		if asTree {
-			return buildTree(list, parentID), nil
-		}
-		return list, nil
+		return []AppCategory{}, nil
 	}
 
-	if len(categories) == 0 {
-		list := s.filterFallback(false, parentID, level)
-		if asTree {
-			return buildTree(list, parentID), nil
-		}
-		return list, nil
+	if categories == nil {
+		categories = []AppCategory{}
 	}
 
 	if asTree {
@@ -346,13 +322,19 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 		isActive = *req.IsActive
 	}
 
+	var parentID *string
+	if req.ParentID != nil && strings.TrimSpace(*req.ParentID) != "" {
+		clean := strings.TrimSpace(*req.ParentID)
+		parentID = &clean
+	}
+
 	level := req.Level
 	if level <= 0 {
-		if req.ParentID == nil || *req.ParentID == "" {
+		if parentID == nil {
 			level = 1
 		} else {
 			// Find parent level
-			parent, err := s.GetCategoryByID(*req.ParentID)
+			parent, err := s.GetCategoryByID(*parentID)
 			if err == nil && parent != nil {
 				level = parent.Level + 1
 			} else {
@@ -363,7 +345,7 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 
 	newCat := AppCategory{
 		ID:          newID,
-		ParentID:    req.ParentID,
+		ParentID:    parentID,
 		Name:        req.Name,
 		Code:        code,
 		Slug:        slug,
@@ -383,7 +365,6 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 
 	payload := map[string]interface{}{
 		"id":          newCat.ID,
-		"parent_id":   newCat.ParentID,
 		"name":        newCat.Name,
 		"code":        newCat.Code,
 		"slug":        newCat.Slug,
@@ -397,20 +378,22 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 		"is_active":   newCat.IsActive,
 		"meta":        newCat.Meta,
 	}
-
-	respBytes, err := s.sbClient.PostDB("app_categories", payload, "return=representation", "")
-	if err == nil {
-		var created []AppCategory
-		if err := json.Unmarshal(respBytes, &created); err == nil && len(created) > 0 {
-			newCat = created[0]
-		}
+	if parentID != nil {
+		payload["parent_id"] = *parentID
 	} else {
-		log.Printf("[CategoryService] PostDB failed: %v. Storing in memory fallback.", err)
+		payload["parent_id"] = nil
 	}
 
-	s.mu.Lock()
-	s.fallback = append(s.fallback, newCat)
-	s.mu.Unlock()
+	respBytes, err := s.sbClient.PostDB("app_categories", payload, "return=representation", "")
+	if err != nil {
+		log.Printf("[CategoryService] PostDB failed: %v", err)
+		return nil, fmt.Errorf("gagal menyimpan kategori ke database: %w", err)
+	}
+
+	var created []AppCategory
+	if err := json.Unmarshal(respBytes, &created); err == nil && len(created) > 0 {
+		newCat = created[0]
+	}
 
 	return &newCat, nil
 }
@@ -427,8 +410,14 @@ func (s *categoryService) UpdateCategory(id string, req UpdateCategoryRequest) (
 	}
 
 	if req.ParentID != nil {
-		current.ParentID = req.ParentID
-		payload["parent_id"] = req.ParentID
+		if strings.TrimSpace(*req.ParentID) == "" {
+			current.ParentID = nil
+			payload["parent_id"] = nil
+		} else {
+			clean := strings.TrimSpace(*req.ParentID)
+			current.ParentID = &clean
+			payload["parent_id"] = clean
+		}
 	}
 	if req.Name != "" {
 		current.Name = req.Name
@@ -481,23 +470,15 @@ func (s *categoryService) UpdateCategory(id string, req UpdateCategoryRequest) (
 
 	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
 	respBytes, err := s.sbClient.PatchDB("app_categories", queryParams, payload, "")
-	if err == nil {
-		var updated []AppCategory
-		if err := json.Unmarshal(respBytes, &updated); err == nil && len(updated) > 0 {
-			current = &updated[0]
-		}
-	} else {
-		log.Printf("[CategoryService] PatchDB failed: %v. Updating in memory fallback.", err)
+	if err != nil {
+		log.Printf("[CategoryService] PatchDB failed: %v", err)
+		return nil, fmt.Errorf("gagal mengupdate kategori di database: %w", err)
 	}
 
-	s.mu.Lock()
-	for i, c := range s.fallback {
-		if c.ID == id {
-			s.fallback[i] = *current
-			break
-		}
+	var updated []AppCategory
+	if err := json.Unmarshal(respBytes, &updated); err == nil && len(updated) > 0 {
+		current = &updated[0]
 	}
-	s.mu.Unlock()
 
 	return current, nil
 }
@@ -507,20 +488,8 @@ func (s *categoryService) DeleteCategory(id string) error {
 	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
 	err := s.sbClient.DeleteDB("app_categories", queryParams, "")
 	if err != nil {
-		log.Printf("[CategoryService] DeleteDB failed: %v. Deleting from memory fallback.", err)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	idx := -1
-	for i, c := range s.fallback {
-		if c.ID == id {
-			idx = i
-			break
-		}
-	}
-	if idx != -1 {
-		s.fallback = append(s.fallback[:idx], s.fallback[idx+1:]...)
+		log.Printf("[CategoryService] DeleteDB failed: %v", err)
+		return fmt.Errorf("gagal menghapus kategori dari database: %w", err)
 	}
 
 	return nil
