@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -229,35 +230,13 @@ func (d *DFlashAdapter) OrderProduct(ctx context.Context, req *VendorOrderReques
 		return nil, fmt.Errorf("gagal memproses transaksi ke server DFlash: %v", err)
 	}
 
-	var rawResp map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &rawResp); err != nil {
-		rawResp = map[string]interface{}{
-			"raw_text": string(bodyBytes),
-		}
-	}
+	status, sn, msg, rawResp := d.parseDFlashResponse(bodyBytes, usedCenter, req.RefID, req.BuyerSKUCode, req.CustomerNo)
 
-	rawStatus := fmt.Sprintf("%v", rawResp["status"])
-	rawStatusText := fmt.Sprintf("%v", rawResp["status_text"])
-	if rawStatusText == "<nil>" {
-		rawStatusText = fmt.Sprintf("%v", rawResp["message"])
+	vendorTrxID := cleanStringVal(rawResp["id"])
+	if vendorTrxID == "" {
+		vendorTrxID = cleanStringVal(rawResp["trx_id"])
 	}
-
-	status := d.normalizeStatusCode(rawStatus, rawStatusText)
-	sn := fmt.Sprintf("%v", rawResp["sn"])
-	if sn == "<nil>" {
-		sn = ""
-	}
-
-	msg := fmt.Sprintf("%v", rawResp["message"])
-	if msg == "<nil>" || msg == "" {
-		msg = fmt.Sprintf("%v", rawResp["keterangan"])
-		if msg == "<nil>" {
-			msg = rawStatusText
-		}
-	}
-
-	vendorTrxID := fmt.Sprintf("%v", rawResp["id"])
-	if vendorTrxID == "<nil>" || vendorTrxID == "" {
+	if vendorTrxID == "" {
 		vendorTrxID = fmt.Sprintf("DFLASH-%s", req.RefID)
 	}
 
@@ -274,6 +253,115 @@ func (d *DFlashAdapter) OrderProduct(ctx context.Context, req *VendorOrderReques
 		RawResponse:  rawResp,
 		CreatedAt:    time.Now(),
 	}, nil
+}
+
+// parseDFlashResponse memproses seluruh format respons dari DFLASH/OtomaX (JSON, XML, maupun Plain Text)
+func (d *DFlashAdapter) parseDFlashResponse(bodyBytes []byte, usedCenter, refID, buyerSKU, dest string) (status string, sn string, msg string, rawResp map[string]interface{}) {
+	rawStr := strings.TrimSpace(string(bodyBytes))
+	rawResp = make(map[string]interface{})
+
+	// 1. Coba decode JSON jika server mengembalikan JSON
+	if err := json.Unmarshal(bodyBytes, &rawResp); err == nil && len(rawResp) > 0 {
+		rawStatus := cleanStringVal(rawResp["status"])
+		rawStatusText := cleanStringVal(rawResp["status_text"])
+		if rawStatusText == "" {
+			rawStatusText = cleanStringVal(rawResp["message"])
+		}
+		if rawStatusText == "" {
+			rawStatusText = cleanStringVal(rawResp["keterangan"])
+		}
+		sn = cleanStringVal(rawResp["sn"])
+		status = d.normalizeStatusCode(rawStatus, rawStatusText)
+		msg = rawStatusText
+		if msg == "" {
+			msg = rawStatus
+		}
+		return
+	}
+
+	// 2. Format Plain Text Resmi DFLASH / OtomaX
+	rawResp["raw_text"] = rawStr
+	upper := strings.ToUpper(rawStr)
+	msg = rawStr
+
+	// Indikator GAGAL / PENOLAKAN DARI VENDOR DFLASH
+	isFailed := strings.Contains(upper, "TDK DIPROSES") ||
+		strings.Contains(upper, "TIDAK DIPROSES") ||
+		strings.Contains(upper, "TDK BISA DIPROSES") ||
+		strings.Contains(upper, "STOK TIDAK CUKUP") ||
+		strings.Contains(upper, "SALDO TIDAK CUKUP") ||
+		strings.Contains(upper, "STOK KOSONG") ||
+		strings.Contains(upper, "GAGAL") ||
+		strings.Contains(upper, "FAILED") ||
+		strings.Contains(upper, "GANGGUAN") ||
+		strings.Contains(upper, "INVALID") ||
+		strings.Contains(upper, "SALAH") ||
+		strings.Contains(upper, "KOSONG") ||
+		strings.Contains(upper, "TIDAK ADA STOK") ||
+		strings.Contains(upper, "BELUM TERDAFTAR") ||
+		strings.Contains(upper, "TIDAK TERDAFTAR") ||
+		strings.Contains(upper, "SIGNATURE DOES NOT MACTH") ||
+		strings.Contains(upper, "SIGNATURE") ||
+		strings.Contains(upper, "WHITELIST") ||
+		strings.Contains(upper, "CUT OFF") ||
+		strings.Contains(upper, "CLOSED") ||
+		strings.Contains(upper, "ERROR")
+
+	if isFailed {
+		status = "FAILED"
+		if strings.Contains(upper, "STOK TIDAK CUKUP") || strings.Contains(upper, "SALDO TIDAK CUKUP") {
+			msg = "Stok / Saldo agen di server DFLASH tidak mencukupi"
+		} else if strings.Contains(upper, "SIGNATURE") {
+			msg = "Signature otentikasi DFLASH ditolak server vendor"
+		} else if strings.Contains(upper, "BELUM TERDAFTAR") || strings.Contains(upper, "WHITELIST") {
+			msg = "IP server belum terdaftar di whitelist DFLASH"
+		} else if strings.Contains(upper, "TDK DIPROSES") {
+			msg = "Transaksi tidak diproses oleh server DFLASH"
+		}
+		return
+	}
+
+	// Indikator SUKSES
+	isSuccess := (strings.Contains(upper, "SUKSES") || strings.Contains(upper, "SUCCESS") || strings.Contains(upper, "BERHASIL")) &&
+		!strings.Contains(upper, "TDK") && !strings.Contains(upper, "TIDAK")
+
+	if isSuccess {
+		status = "SUCCESS"
+		sn = extractSNFromText(rawStr)
+		return
+	}
+
+	// Indikator PENDING / ANTRIAN
+	isPending := strings.Contains(upper, "DIPROSES") ||
+		strings.Contains(upper, "ANTRIAN") ||
+		strings.Contains(upper, "MENUNGGU") ||
+		strings.Contains(upper, "PENDING")
+
+	if isPending {
+		status = "PENDING"
+		return
+	}
+
+	// Default jika respons vendor di luar dugaan: anggap FAILED agar aman bagi saldo user
+	status = "FAILED"
+	msg = fmt.Sprintf("Respons server DFLASH ditolak: %s", rawStr)
+	return
+}
+
+func extractSNFromText(text string) string {
+	patterns := []string{
+		`(?i)(?:SN|TOKEN|STRUK)[:\s/]+([A-Za-z0-9\-/\.]+)`,
+		`(?i)VOUCHER[:\s/]+([A-Za-z0-9\-/\.]+)`,
+	}
+	for _, p := range patterns {
+		re := regexp.MustCompile(p)
+		matches := re.FindStringSubmatch(text)
+		if len(matches) > 1 {
+			sn := strings.TrimSpace(matches[1])
+			return strings.TrimRight(sn, ".,; ")
+		}
+	}
+	return ""
 }
 
 // normalizeStatusCode memetakan kode status numerik & teks resmi OtomaX / DFLASH
@@ -297,7 +385,11 @@ func (d *DFlashAdapter) normalizeStatusCode(rawStatus, rawStatusText string) str
 	}
 	if strings.Contains(upper, "GAGAL") || strings.Contains(upper, "FAILED") ||
 		strings.Contains(upper, "SALDO TIDAK CUKUP") || strings.Contains(upper, "GANGGUAN") ||
-		strings.Contains(upper, "KOSONG") || strings.Contains(upper, "NO DATA") {
+		strings.Contains(upper, "KOSONG") || strings.Contains(upper, "NO DATA") ||
+		strings.Contains(upper, "INVALID") || strings.Contains(upper, "SALAH") ||
+		strings.Contains(upper, "TIDAK TERDAFTAR") || strings.Contains(upper, "BELUM TERDAFTAR") ||
+		strings.Contains(upper, "WHITELIST") || strings.Contains(upper, "ERROR") ||
+		strings.Contains(upper, "TDK DIPROSES") {
 		return "FAILED"
 	}
 	return "PENDING"
@@ -327,40 +419,19 @@ func (d *DFlashAdapter) CheckStatus(ctx context.Context, refID string) (*VendorO
 		return nil, fmt.Errorf("gagal mengecek status transaksi ke server DFlash: %v", err)
 	}
 
-	var rawResp map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &rawResp); err != nil {
-		return &VendorOrderResponse{
-			VendorCode: "DFLASH",
-			RefID:      refID,
-			Status:     "PENDING",
-			Message:    string(bodyBytes),
-			CreatedAt:  time.Now(),
-		}, nil
-	}
+	status, sn, msg, rawResp := d.parseDFlashResponse(bodyBytes, usedCenter, refID, "", "")
 
-	rawStatus := fmt.Sprintf("%v", rawResp["status"])
-	rawStatusText := fmt.Sprintf("%v", rawResp["status_text"])
-	if rawStatusText == "<nil>" {
-		rawStatusText = fmt.Sprintf("%v", rawResp["message"])
+	vendorTrxID := cleanStringVal(rawResp["id"])
+	if vendorTrxID == "" {
+		vendorTrxID = cleanStringVal(rawResp["trx_id"])
 	}
-
-	status := d.normalizeStatusCode(rawStatus, rawStatusText)
-	sn := fmt.Sprintf("%v", rawResp["sn"])
-	if sn == "<nil>" {
-		sn = ""
-	}
-
-	msg := fmt.Sprintf("%v", rawResp["message"])
-	if msg == "<nil>" || msg == "" {
-		msg = fmt.Sprintf("%v", rawResp["keterangan"])
-		if msg == "<nil>" {
-			msg = rawStatusText
-		}
+	if vendorTrxID == "" {
+		vendorTrxID = fmt.Sprintf("DFLASH-%s", refID)
 	}
 
 	return &VendorOrderResponse{
 		VendorCode:   "DFLASH",
-		VendorTrxID:  fmt.Sprintf("DFLASH-%s", refID),
+		VendorTrxID:  vendorTrxID,
 		RefID:        refID,
 		Status:       status,
 		SerialNumber: sn,

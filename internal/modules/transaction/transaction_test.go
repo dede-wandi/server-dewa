@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/modules/product"
+	"github.com/dede-wandi/server-dewa/internal/modules/vendor"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
@@ -15,12 +16,15 @@ func TestTransactionOrderLifecycle(t *testing.T) {
 	pointSvc := wallet.NewPointService(walletRepo, nil)
 	walletSvc := wallet.NewWalletService(walletRepo, pointSvc, nil)
 
+	// Mock vendor adapter for offline deterministic unit testing
+	vendor.GetGlobalManager().RegisterAdapter(vendor.NewMockVendorAdapter("DFLASH"))
+
 	productRepo := product.NewCachedRepository(1 * time.Minute)
 	productRepo.Save(&product.Product{
 		ID:           "p-tsel10",
 		CategoryID:   "cat-pulsa",
 		Category:     product.CategoryPulsa,
-		VendorCode:   "MANUAL",
+		VendorCode:   "DFLASH",
 		BuyerSKUCode: "TSEL10",
 		Code:         "TSEL10",
 		Name:         "Telkomsel 10.000",

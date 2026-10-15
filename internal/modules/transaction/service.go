@@ -137,9 +137,16 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		// Auto-refund ke saldo dompet jika vendor menolak / gagal
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
+			Amount:          prod.Price,
+			TargetUserID:    user.ID,
 			Reason:          fmt.Sprintf("Auto-refund otomatis atas kegagalan order %s (%s): %v", orderCode, prod.Name, err),
 		}
-		s.walletService.Refund(user, token, refundReq)
+		refTrx, _, errRefund := s.walletService.Refund(user, token, refundReq)
+		if errRefund != nil {
+			log.Printf("⚠️ [AUTO-REFUND WARNING] Gagal auto-refund untuk %s: %v", orderCode, errRefund)
+		} else if refTrx != nil {
+			log.Printf("💰 [AUTO-REFUND SUCCESS] Saldo berhasil direfund otomatis! TrxCode=%s, Amount=Rp %.0f", refTrx.TransactionCode, refTrx.Amount)
+		}
 		order.Status = StatusRefunded
 		s.repo.CreateOrder(order)
 		return order, fmt.Errorf("Transaksi gagal diproses oleh server vendor %s: %v. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", vendorCode, err)
@@ -154,9 +161,16 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		// Auto-refund otomatis jika vendor menyatakan gagal
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
+			Amount:          prod.Price,
+			TargetUserID:    user.ID,
 			Reason:          fmt.Sprintf("Auto-refund atas penolakan vendor %s: %s", vendorCode, vResp.Message),
 		}
-		s.walletService.Refund(user, token, refundReq)
+		refTrx, _, errRefund := s.walletService.Refund(user, token, refundReq)
+		if errRefund != nil {
+			log.Printf("⚠️ [AUTO-REFUND WARNING] Gagal auto-refund untuk %s: %v", orderCode, errRefund)
+		} else if refTrx != nil {
+			log.Printf("💰 [AUTO-REFUND SUCCESS] Saldo berhasil direfund otomatis! TrxCode=%s, Amount=Rp %.0f", refTrx.TransactionCode, refTrx.Amount)
+		}
 		order.Status = StatusRefunded
 		s.repo.CreateOrder(order)
 		return order, fmt.Errorf("Transaksi ditolak oleh server vendor %s: %s. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", vendorCode, vResp.Message)

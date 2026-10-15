@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -189,5 +190,25 @@ func TestDFlashOfficialDocumentationPayloads(t *testing.T) {
 	}
 	if cbFail.Status != "FAILED" {
 		t.Errorf("expected status FAILED, got %s", cbFail.Status)
+	}
+
+	// 3. Test Plain Text Response Langsung dari DFLASH (Stok Tidak Cukup)
+	realFailText := []byte(`INP5 ke 085861650213 R#TEST-REF-001 INP5.085861650213 tdk diproses. Stok tidak cukup. Sisa stok  0. Hrg:6.683. Antrian:0. Yo isi lg stoknya, Via bank ketik TIKET.JML.PIN send ke CENTER #*TRANSAKSI LANCARR`)
+	status, _, msg, _ := dflash.parseDFlashResponse(realFailText, "http://45.76.183.72:666", "TEST-REF-001", "INP5", "085861650213")
+	if status != "FAILED" {
+		t.Errorf("expected status FAILED for real DFLASH out-of-stock text, got: %s", status)
+	}
+	if !strings.Contains(msg, "Stok / Saldo agen") {
+		t.Errorf("expected informative error message, got: %s", msg)
+	}
+
+	// 4. Test Plain Text Response Sukses dari DFLASH dengan Serial Number
+	successText := []byte(`INP5 ke 085861650213 R#ORD-1001 SUKSES. SN: 2026101511223344. Sal: 150.000 - 6.683 = 143.317. Trx lancar`)
+	statusSucc, snSucc, _, _ := dflash.parseDFlashResponse(successText, "http://45.76.183.72:666", "ORD-1001", "INP5", "085861650213")
+	if statusSucc != "SUCCESS" {
+		t.Errorf("expected status SUCCESS for OtomaX success text, got: %s", statusSucc)
+	}
+	if snSucc != "2026101511223344" {
+		t.Errorf("expected SN '2026101511223344', got: %s", snSucc)
 	}
 }
