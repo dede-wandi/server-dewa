@@ -194,19 +194,173 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 }
 
 func (s *service) GetOrderDetail(orderCode string) (*Order, error) {
-	o, ok := s.repo.GetOrderByCode(orderCode)
-	if !ok {
-		return nil, errors.New("Order transaksi tidak ditemukan")
+	clean := strings.ToUpper(strings.TrimSpace(orderCode))
+	if o, ok := s.repo.GetOrderByCode(clean); ok {
+		return o, nil
 	}
-	return o, nil
+
+	if s.walletService != nil {
+		allTrx := s.walletService.GetAllTransactions()
+		for _, trx := range allTrx {
+			if trx != nil && (strings.ToUpper(trx.TransactionCode) == clean || strings.ToUpper(trx.ReferenceID) == clean) {
+				if o := mapWalletTrxToOrder(trx); o != nil {
+					return o, nil
+				}
+			}
+		}
+	}
+
+	return nil, errors.New("Order transaksi tidak ditemukan")
 }
 
 func (s *service) GetUserOrders(userID string) []*Order {
-	return s.repo.GetOrdersByUser(userID)
+	memOrders := s.repo.GetOrdersByUser(userID)
+	known := make(map[string]bool)
+	for _, o := range memOrders {
+		if o != nil {
+			known[strings.ToUpper(o.OrderCode)] = true
+			if o.WalletTrxCode != "" {
+				known[strings.ToUpper(o.WalletTrxCode)] = true
+			}
+		}
+	}
+
+	result := make([]*Order, len(memOrders))
+	copy(result, memOrders)
+
+	// Gabungkan secara cerdas dengan mutasi transaksi yang tercatat di Supabase / WalletService
+	if s.walletService != nil {
+		walletTrxs := s.walletService.GetHistory(userID)
+		for _, trx := range walletTrxs {
+			if trx == nil {
+				continue
+			}
+			codeKey := strings.ToUpper(trx.TransactionCode)
+			refKey := strings.ToUpper(trx.ReferenceID)
+
+			if (codeKey != "" && known[codeKey]) || (refKey != "" && known[refKey]) {
+				continue
+			}
+
+			mapped := mapWalletTrxToOrder(trx)
+			if mapped != nil {
+				result = append(result, mapped)
+				if codeKey != "" {
+					known[codeKey] = true
+				}
+				if refKey != "" {
+					known[refKey] = true
+				}
+			}
+		}
+	}
+
+	return result
 }
 
 func (s *service) GetAllOrders() []*Order {
-	return s.repo.GetAllOrders()
+	memOrders := s.repo.GetAllOrders()
+	known := make(map[string]bool)
+	for _, o := range memOrders {
+		if o != nil {
+			known[strings.ToUpper(o.OrderCode)] = true
+			if o.WalletTrxCode != "" {
+				known[strings.ToUpper(o.WalletTrxCode)] = true
+			}
+		}
+	}
+
+	result := make([]*Order, len(memOrders))
+	copy(result, memOrders)
+
+	if s.walletService != nil {
+		walletTrxs := s.walletService.GetAllTransactions()
+		for _, trx := range walletTrxs {
+			if trx == nil {
+				continue
+			}
+			codeKey := strings.ToUpper(trx.TransactionCode)
+			refKey := strings.ToUpper(trx.ReferenceID)
+
+			if (codeKey != "" && known[codeKey]) || (refKey != "" && known[refKey]) {
+				continue
+			}
+
+			mapped := mapWalletTrxToOrder(trx)
+			if mapped != nil {
+				result = append(result, mapped)
+				if codeKey != "" {
+					known[codeKey] = true
+				}
+				if refKey != "" {
+					known[refKey] = true
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+func mapWalletTrxToOrder(trx *wallet.WalletTransaction) *Order {
+	if trx == nil {
+		return nil
+	}
+
+	orderCode := trx.ReferenceID
+	if orderCode == "" {
+		orderCode = trx.TransactionCode
+	}
+
+	prodName := strings.TrimPrefix(trx.Title, "Pembelian ")
+
+	target := "-"
+	desc := strings.TrimSpace(trx.Description)
+	if strings.HasPrefix(desc, "Tujuan: ") {
+		targetPart := strings.TrimPrefix(desc, "Tujuan: ")
+		if idx := strings.Index(targetPart, " ("); idx != -1 {
+			target = targetPart[:idx]
+		} else {
+			target = targetPart
+		}
+	} else if desc != "" {
+		target = desc
+	}
+
+	status := StatusSuccess
+	switch strings.ToUpper(trx.Status) {
+	case "PENDING":
+		status = StatusProcessing
+	case "FAILED":
+		status = StatusFailed
+	case "REFUND", "REFUNDED", "REVERSED":
+		status = StatusRefunded
+	}
+
+	if strings.ToUpper(trx.Category) == "REFUND" {
+		status = StatusRefunded
+	}
+
+	sn := ""
+	if strings.Contains(trx.AdminNotes, "SN: ") {
+		parts := strings.Split(trx.AdminNotes, "SN: ")
+		if len(parts) > 1 {
+			sn = strings.TrimSpace(parts[1])
+		}
+	}
+
+	return &Order{
+		ID:            trx.ID,
+		OrderCode:     orderCode,
+		UserID:        trx.UserID,
+		ProductName:   prodName,
+		TargetAccount: target,
+		Price:         trx.Amount,
+		Status:        status,
+		SerialNumber:  sn,
+		WalletTrxCode: trx.TransactionCode,
+		CreatedAt:     trx.CreatedAt,
+	}
 }
 
 // sanitizeErrorMessage membersihkan dan menyamarkan seluruh respons error server / provider

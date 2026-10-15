@@ -155,6 +155,15 @@ func (s *walletService) GetHistory(userID string) []*WalletTransaction {
 				return dbTrxs
 			}
 		}
+
+		// 2. Direct query fallback via PostgREST
+		filter := fmt.Sprintf("user_id=eq.%s&order=created_at.desc&limit=50", userID)
+		if respBytes, err := s.sbClient.GetDB("app_wallet_transactions", filter, ""); err == nil {
+			var dbTrxs []*WalletTransaction
+			if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+				return dbTrxs
+			}
+		}
 	}
 
 	return s.repo.GetTransactionsByUser(userID)
