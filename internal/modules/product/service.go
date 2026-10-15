@@ -1,10 +1,14 @@
 package product
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/dede-wandi/server-dewa/internal/modules/vendor"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
 
@@ -14,19 +18,24 @@ type Service interface {
 	GetProduct(code string) (*Product, error)
 	GetCategories() []string
 	GetBrands(category string) []string
+	CreateProduct(req CreateProductRequest) (*Product, error)
+	UpdateProduct(id string, req UpdateProductRequest) (*Product, error)
+	DeleteProduct(id string) error
 	SyncProducts(adminID string) (int, error)
 }
 
 type service struct {
-	repo     Repository
-	sbClient *supabase.Client
+	repo      Repository
+	sbClient  *supabase.Client
+	vendorMgr *vendor.VendorManager
 }
 
 // NewService constructs a new product service instance
 func NewService(repo Repository, sbClient *supabase.Client) Service {
 	return &service{
-		repo:     repo,
-		sbClient: sbClient,
+		repo:      repo,
+		sbClient:  sbClient,
+		vendorMgr: vendor.GetGlobalManager(),
 	}
 }
 
@@ -109,6 +118,243 @@ func (s *service) GetBrands(category string) []string {
 	}
 	sort.Strings(brands)
 	return brands
+}
+
+// CreateProduct membuat produk baru dengan validasi kategori wajib & OOP vendor check
+func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
+	// 1. Validasi Kategori Wajib
+	categoryID := strings.TrimSpace(req.CategoryID)
+	if categoryID == "" {
+		return nil, errors.New("Kategori produk wajib diisi (category_id tidak boleh kosong). Produk belum bisa dibuat jika kategori tidak ada.")
+	}
+
+	// 2. Verifikasi keberadaan kategori di tabel app_categories Supabase
+	var categoryName string
+	var categorySlug string
+	if s.sbClient != nil {
+		catQuery := fmt.Sprintf("id=eq.%s&select=id,name,code,slug", categoryID)
+		catBytes, err := s.sbClient.GetDB("app_categories", catQuery, "")
+		if err != nil {
+			return nil, fmt.Errorf("gagal memverifikasi kategori: %v", err)
+		}
+
+		var matchedCategories []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Code string `json:"code"`
+			Slug string `json:"slug"`
+		}
+		if err := json.Unmarshal(catBytes, &matchedCategories); err != nil || len(matchedCategories) == 0 {
+			return nil, fmt.Errorf("kategori dengan ID '%s' tidak ditemukan di database. Produk belum bisa dibuat jika belum ada kategori.", categoryID)
+		}
+		categoryName = matchedCategories[0].Name
+		categorySlug = matchedCategories[0].Slug
+	}
+
+	// 3. Validasi Kode & Vendor SKU
+	buyerSKU := strings.TrimSpace(req.BuyerSKUCode)
+	code := strings.TrimSpace(req.Code)
+	if code == "" && buyerSKU != "" {
+		code = buyerSKU
+	} else if buyerSKU == "" && code != "" {
+		buyerSKU = code
+	}
+	if code == "" {
+		return nil, errors.New("kode produk (code / buyer_sku_code) wajib diisi")
+	}
+
+	vendorCode := strings.ToUpper(strings.TrimSpace(req.VendorCode))
+	if vendorCode == "" {
+		vendorCode = "MANUAL"
+	}
+
+	// 4. Validasi OOP Vendor SKU:
+	// Jika kode tidak sesuai dengan aturan nama vendor, jangan diteruskan / gagalkan!
+	if err := s.vendorMgr.ValidateProductVendor(vendorCode, buyerSKU); err != nil {
+		return nil, err
+	}
+
+	if req.Name == "" {
+		return nil, errors.New("nama produk (name) wajib diisi")
+	}
+	if req.Price < 0 {
+		return nil, errors.New("harga jual (price) tidak boleh negatif")
+	}
+
+	brand := strings.TrimSpace(req.Brand)
+	if brand == "" {
+		brand = extractBrand(req.Name)
+	}
+
+	catTag := req.Category
+	if catTag == "" {
+		if categorySlug != "" {
+			catTag = categorySlug
+		} else {
+			catTag = "pulsa"
+		}
+	}
+
+	status := strings.ToUpper(strings.TrimSpace(req.Status))
+	if status == "" {
+		status = "ACTIVE"
+	}
+
+	ptsReward := int64(0)
+	if req.PointsReward != nil {
+		ptsReward = *req.PointsReward
+	} else if req.Price > 0 {
+		ptsReward = int64(req.Price * 0.01) // 1% cashback default
+	}
+
+	// 5. Simpan ke database Supabase (public.ppob_products)
+	newProd := &Product{
+		CategoryID:    categoryID,
+		CategoryName:  categoryName,
+		Category:      ProductCategory(strings.ToLower(catTag)),
+		VendorCode:    vendorCode,
+		BuyerSKUCode:  buyerSKU,
+		Code:          strings.ToUpper(code),
+		Name:          req.Name,
+		Brand:         brand,
+		CostPrice:     req.CostPrice,
+		OriginalPrice: req.CostPrice,
+		Price:         req.Price,
+		PointsReward:  ptsReward,
+		Status:        status,
+		Description:   req.Description,
+		Stock:         req.Stock,
+		ImageURL:      req.ImageURL,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	if s.sbClient != nil {
+		insertPayload := map[string]interface{}{
+			"category_id":    categoryID,
+			"vendor_code":    vendorCode,
+			"buyer_sku_code": buyerSKU,
+			"code":           newProd.Code,
+			"name":           newProd.Name,
+			"category":       string(newProd.Category),
+			"brand":          newProd.Brand,
+			"cost_price":     newProd.CostPrice,
+			"price":          newProd.Price,
+			"points_reward":  newProd.PointsReward,
+			"status":         newProd.Status,
+			"description":    newProd.Description,
+			"stock":          newProd.Stock,
+			"image_url":      newProd.ImageURL,
+			"is_active":      status == "ACTIVE",
+			"created_at":     newProd.CreatedAt,
+			"updated_at":     newProd.UpdatedAt,
+		}
+
+		respBytes, err := s.sbClient.PostDB("ppob_products", insertPayload, "", "")
+		if err != nil {
+			return nil, fmt.Errorf("gagal menyimpan produk ke database: %v", err)
+		}
+
+		var inserted []struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(respBytes, &inserted); err == nil && len(inserted) > 0 {
+			newProd.ID = inserted[0].ID
+		}
+	}
+
+	// 6. Simpan ke memori cache agar instan dapat diakses API & Mobile
+	s.repo.Save(newProd)
+
+	return newProd, nil
+}
+
+// UpdateProduct memperbarui data produk
+func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, error) {
+	if s.sbClient == nil {
+		return nil, errors.New("database client tidak tersedia")
+	}
+
+	updatePayload := make(map[string]interface{})
+	if req.CategoryID != nil {
+		// Validasi kategori baru jika diubah
+		catID := strings.TrimSpace(*req.CategoryID)
+		if catID != "" {
+			catQuery := fmt.Sprintf("id=eq.%s&select=id", catID)
+			catBytes, err := s.sbClient.GetDB("app_categories", catQuery, "")
+			if err != nil || len(catBytes) == 0 {
+				return nil, fmt.Errorf("kategori baru ID '%s' tidak ditemukan", catID)
+			}
+		}
+		updatePayload["category_id"] = catID
+	}
+	if req.VendorCode != nil {
+		updatePayload["vendor_code"] = strings.ToUpper(*req.VendorCode)
+	}
+	if req.BuyerSKUCode != nil {
+		updatePayload["buyer_sku_code"] = *req.BuyerSKUCode
+	}
+	if req.Code != nil {
+		updatePayload["code"] = strings.ToUpper(*req.Code)
+	}
+	if req.Name != nil {
+		updatePayload["name"] = *req.Name
+	}
+	if req.Brand != nil {
+		updatePayload["brand"] = *req.Brand
+	}
+	if req.CostPrice != nil {
+		updatePayload["cost_price"] = *req.CostPrice
+	}
+	if req.Price != nil {
+		updatePayload["price"] = *req.Price
+	}
+	if req.PointsReward != nil {
+		updatePayload["points_reward"] = *req.PointsReward
+	}
+	if req.Status != nil {
+		updatePayload["status"] = strings.ToUpper(*req.Status)
+		updatePayload["is_active"] = strings.ToUpper(*req.Status) == "ACTIVE"
+	}
+	if req.Description != nil {
+		updatePayload["description"] = *req.Description
+	}
+	if req.Stock != nil {
+		updatePayload["stock"] = *req.Stock
+	}
+	if req.ImageURL != nil {
+		updatePayload["image_url"] = *req.ImageURL
+	}
+	updatePayload["updated_at"] = time.Now()
+
+	filter := fmt.Sprintf("id=eq.%s", id)
+	_, err := s.sbClient.PatchDB("ppob_products", filter, updatePayload, "")
+	if err != nil {
+		return nil, fmt.Errorf("gagal mengupdate produk: %v", err)
+	}
+
+	// Resync cache
+	_, _ = s.repo.SyncFromSupabase(s.sbClient)
+
+	// Ambil detail produk terbaru
+	return s.GetProduct(id)
+}
+
+// DeleteProduct menghapus produk
+func (s *service) DeleteProduct(id string) error {
+	if s.sbClient == nil {
+		return errors.New("database client tidak tersedia")
+	}
+
+	filter := fmt.Sprintf("id=eq.%s", id)
+	err := s.sbClient.DeleteDB("ppob_products", filter, "")
+	if err != nil {
+		return fmt.Errorf("gagal menghapus produk: %v", err)
+	}
+
+	// Resync cache
+	_, _ = s.repo.SyncFromSupabase(s.sbClient)
+	return nil
 }
 
 func (s *service) SyncProducts(adminID string) (int, error) {

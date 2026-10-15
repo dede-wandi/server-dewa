@@ -99,6 +99,94 @@
       "description": "Endpoint umum untuk monitoring status server dan pengecekan uptime tanpa otentikasi."
     },
     {
+      "name": "Global Callbacks & Webhooks",
+      "description": "Endpoint webhook global untuk menerima notifikasi callback otomatis dari Payment Gateway dan Server Vendor PPOB.",
+      "item": [
+        {
+          "name": "Get Callback Info & Webhook URLs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/callback/info",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callback",
+                "info"
+              ]
+            },
+            "description": "Menampilkan info URL webhook callback global yang siap disalin ke dashboard vendor dan payment gateway saat integrasi."
+          }
+        },
+        {
+          "name": "Payment Gateway Callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Callback-Signature",
+                "value": "sample_signature_hash"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"DEV-T12345\",\n  \"merchant_ref\": \"DEP-20261015-001\",\n  \"payment_method\": \"QRIS\",\n  \"status\": \"PAID\",\n  \"total_amount\": 50000,\n  \"paid_at\": 1739599200\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/callback/payment/default",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callback",
+                "payment",
+                "default"
+              ]
+            },
+            "description": "Simulasi callback webhook saat pelanggan berhasil menyelesaikan pembayaran via payment gateway."
+          }
+        },
+        {
+          "name": "Universal Callback (Semua Vendor & PG)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ref_id\": \"ORD-20261015-001\",\n  \"customer_no\": \"085712345678\",\n  \"product\": \"TSP10\",\n  \"message\": \"Transaksi Sukses\",\n  \"status\": \"SUKSES\",\n  \"sn\": \"085712345678/SN98234123\",\n  \"price\": 10200\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/callback",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "callback"
+              ]
+            },
+            "description": "URL callback universal yang konsisten dengan API lainnya (/api/v1/callback) untuk diajukan ke whitelist SEMUA vendor (DFLASH, OtomaX, agregator PPOB, Payment Gateway). Mendukung POST (JSON/Form) dan GET (Query)."
+          }
+        }
+      ]
+    },
+    {
       "name": "User",
       "description": "Seluruh endpoint yang digunakan oleh Aplikasi Mobile / Web Pelanggan & Mitra Merchant (Auth, Katalog, Dompet, Poin, Order Transaksi).",
       "item": [
@@ -1592,6 +1680,43 @@
                 },
                 "description": "Menampilkan agregasi total uang berputar, total user aktif, alokasi memori runtime, dan status server."
               }
+            },
+            {
+              "name": "Check Vendor Balance (DFLASH)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/vendor/balance?vendor=DFLASH",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "vendor",
+                    "balance"
+                  ],
+                  "query": [
+                    {
+                      "key": "vendor",
+                      "value": "DFLASH"
+                    }
+                  ]
+                },
+                "description": "Mengecek sisa saldo deposit agen pada server vendor DFLASH (Format: http://ip_dflash/balance?memberID=[memberid]&sign=[sign])."
+              }
             }
           ]
         },
@@ -2273,6 +2398,128 @@
         {
           "name": "Products",
           "item": [
+            {
+              "name": "Create Product (Wajib Dalam Kategori & Validasi Vendor)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"category_id\": \"78c83088-3f5d-4386-ac76-751eabf60e3b\",\n  \"vendor_code\": \"DFLASH\",\n  \"buyer_sku_code\": \"FIBP14\",\n  \"code\": \"FIBP14\",\n  \"name\": \"Promo Indosat Data 14GB 28 Hari\",\n  \"brand\": \"Indosat\",\n  \"cost_price\": 44640,\n  \"price\": 46000,\n  \"status\": \"ACTIVE\",\n  \"description\": \"Promo Kuota Data Indosat 14GB masa aktif 28 hari\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/products",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "products"
+                  ]
+                },
+                "description": "Menambahkan produk baru. WAJIB mengisi category_id yang valid (produk tidak bisa dibuat jika kategori tidak ada). Memvalidasi buyer_sku_code dan vendor_code secara OOP."
+              }
+            },
+            {
+              "name": "Update Product",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"price\": 46500,\n  \"status\": \"ACTIVE\",\n  \"description\": \"Update harga promo Indosat Data 14GB\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/products/:id",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "products",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "FIBP14"
+                    }
+                  ]
+                },
+                "description": "Memperbarui data harga atau status produk."
+              }
+            },
+            {
+              "name": "Delete Product",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/products/:id",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "products",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "FIBP14"
+                    }
+                  ]
+                },
+                "description": "Menghapus produk dari katalog."
+              }
+            },
             {
               "name": "Sync Products",
               "request": {

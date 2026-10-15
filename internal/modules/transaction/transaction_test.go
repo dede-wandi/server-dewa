@@ -16,6 +16,19 @@ func TestTransactionOrderLifecycle(t *testing.T) {
 	walletSvc := wallet.NewWalletService(walletRepo, pointSvc, nil)
 
 	productRepo := product.NewCachedRepository(1 * time.Minute)
+	productRepo.Save(&product.Product{
+		ID:           "p-tsel10",
+		CategoryID:   "cat-pulsa",
+		Category:     product.CategoryPulsa,
+		VendorCode:   "MANUAL",
+		BuyerSKUCode: "TSEL10",
+		Code:         "TSEL10",
+		Name:         "Telkomsel 10.000",
+		Brand:        "Telkomsel",
+		CostPrice:    10200,
+		Price:        11250,
+		Status:       "ACTIVE",
+	})
 	productSvc := product.NewService(productRepo, nil)
 
 	txRepo := NewMemoryRepository()

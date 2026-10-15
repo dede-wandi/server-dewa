@@ -44,16 +44,35 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
 	r.Get("/", h.ListProducts)
+	r.Get("", h.ListProducts)
 	r.Get("/categories", h.ListCategories)
 	r.Get("/brands", h.ListBrands)
 	r.Get("/{code}", h.GetProductDetail)
 
-	// Admin-only synchronization
+	// Admin-only / CRUD operations
 	r.Group(func(adminOnly chi.Router) {
 		adminOnly.Use(middleware.RequireRoles("admin", "superadmin"))
+		adminOnly.Post("/", h.CreateProduct)
+		adminOnly.Post("", h.CreateProduct)
+		adminOnly.Put("/{id}", h.UpdateProduct)
+		adminOnly.Delete("/{id}", h.DeleteProduct)
 		adminOnly.Post("/sync", h.SyncProducts)
 	})
 
+	return r
+}
+
+// AdminRoutes mounts dedicated administrative CRUD endpoints
+func (h *Handler) AdminRoutes() chi.Router {
+	r := chi.NewRouter()
+	r.Get("/", h.ListProducts)
+	r.Get("", h.ListProducts)
+	r.Get("/{code}", h.GetProductDetail)
+	r.Post("/", h.CreateProduct)
+	r.Post("", h.CreateProduct)
+	r.Put("/{id}", h.UpdateProduct)
+	r.Delete("/{id}", h.DeleteProduct)
+	r.Post("/sync", h.SyncProducts)
 	return r
 }
 
@@ -161,7 +180,107 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 		"service":     "product-service",
 		"version":     "v2.0.0 (Clean OOP)",
 		"cache":       "In-Memory TTL 5m (Sub-millisecond latency)",
-		"endpoints":   []string{"GET /api/v1/products", "GET /api/v1/products/{code}", "GET /api/v1/products/categories", "GET /api/v1/products/brands", "POST /api/v1/products/sync"},
+		"endpoints":   []string{"GET /api/v1/products", "GET /api/v1/products/{code}", "GET /api/v1/products/categories", "GET /api/v1/products/brands", "POST /api/v1/admin/products", "PUT /api/v1/admin/products/{id}", "DELETE /api/v1/admin/products/{id}", "POST /api/v1/admin/products/sync"},
 		"description": "Clean Architecture catalog engine for Pulsa, Data, PLN, E-Money, Game",
+	})
+}
+
+// CreateProduct creates a new product within a mandatory category and validates vendor SKU
+func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req CreateProductRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload JSON tidak valid: " + err.Error(),
+		})
+		return
+	}
+
+	prod, err := h.service.CreateProduct(req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Produk berhasil dibuat di dalam kategori",
+		"data":    prod,
+	})
+}
+
+// UpdateProduct updates product details by ID
+func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Parameter ID produk wajib disertakan",
+		})
+		return
+	}
+
+	var req UpdateProductRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload JSON tidak valid: " + err.Error(),
+		})
+		return
+	}
+
+	prod, err := h.service.UpdateProduct(id, req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Produk berhasil diperbarui",
+		"data":    prod,
+	})
+}
+
+// DeleteProduct removes product by ID
+func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Parameter ID produk wajib disertakan",
+		})
+		return
+	}
+
+	if err := h.service.DeleteProduct(id); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Produk berhasil dihapus",
 	})
 }

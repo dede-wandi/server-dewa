@@ -149,11 +149,14 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 		return len(r.allCache), nil
 	}
 
-	// 1. Fetch live products from Supabase database (public.products)
-	dbBytes, err := sbClient.GetDB("products", "select=*&is_active=eq.true", "")
+	// 1. Fetch live products from Supabase database (public.ppob_products)
+	dbBytes, err := sbClient.GetDB("ppob_products", "select=*&is_active=eq.true", "")
 	if err == nil && len(dbBytes) > 0 {
 		var dbProducts []struct {
 			ID            string  `json:"id"`
+			CategoryID    string  `json:"category_id"`
+			VendorCode    string  `json:"vendor_code"`
+			BuyerSKUCode  string  `json:"buyer_sku_code"`
 			Code          string  `json:"code"`
 			Name          string  `json:"name"`
 			Category      string  `json:"category"`
@@ -161,6 +164,7 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 			Price         float64 `json:"price"`
 			CostPrice     float64 `json:"cost_price"`
 			PointsReward  int64   `json:"points_reward"`
+			Status        string  `json:"status"`
 			Stock         int     `json:"stock"`
 			Description   string  `json:"description"`
 			ImageURL      string  `json:"image_url"`
@@ -170,7 +174,9 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 			r.mu.Lock()
 			for _, dp := range dbProducts {
 				code := dp.Code
-				if code == "" {
+				if code == "" && dp.BuyerSKUCode != "" {
+					code = dp.BuyerSKUCode
+				} else if code == "" {
 					code = strings.ToUpper(strings.ReplaceAll(dp.Name, " ", "_"))
 				}
 				brand := dp.Brand
@@ -181,16 +187,29 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 				if ptsReward <= 0 {
 					ptsReward = int64(dp.Price * 0.01)
 				}
+				vendorCode := dp.VendorCode
+				if vendorCode == "" {
+					vendorCode = "MANUAL"
+				}
+				status := dp.Status
+				if status == "" {
+					status = "ACTIVE"
+				}
+
 				p := &Product{
 					ID:            dp.ID,
+					CategoryID:    dp.CategoryID,
+					VendorCode:    vendorCode,
+					BuyerSKUCode:  dp.BuyerSKUCode,
 					Code:          code,
 					Name:          dp.Name,
 					Category:      ProductCategory(strings.ToLower(dp.Category)),
 					Brand:         brand,
-					Price:         dp.Price,
+					CostPrice:     dp.CostPrice,
 					OriginalPrice: dp.CostPrice,
+					Price:         dp.Price,
 					PointsReward:  ptsReward,
-					Status:        "ACTIVE",
+					Status:        status,
 					Description:   dp.Description,
 					Stock:         dp.Stock,
 					ImageURL:      dp.ImageURL,

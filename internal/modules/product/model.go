@@ -17,16 +17,57 @@ const (
 // Product represents a digital product item in DewaCell PPOB catalog
 type Product struct {
 	ID            string          `json:"id"`
-	Code          string          `json:"code"`           // e.g. TSEL10, PLN50, DANA25
-	Name          string          `json:"name"`           // e.g. Telkomsel 10.000 Reguler
-	Category      ProductCategory `json:"category"`       // pulsa, data, pln, emoney, game
-	Brand         string          `json:"brand"`          // Telkomsel, Indosat, PLN, DANA, GoPay
-	Price         float64         `json:"price"`          // Harga jual ke pelanggan
-	OriginalPrice float64         `json:"original_price"` // Harga modal dari provider
-	PointsReward  int64           `json:"points_reward"`  // Cashback DewaPoin otomatis
-	Status        string          `json:"status"`         // ACTIVE, GANGGUAN, EMPTY
+	CategoryID    string          `json:"category_id"`              // Wajib berelasi dengan app_categories
+	CategoryName  string          `json:"category_name,omitempty"`   // Nama kategori (join/lookup)
+	Category      ProductCategory `json:"category"`                  // pulsa, data, pln, emoney, game
+	VendorCode    string          `json:"vendor_code"`               // DIGIFLAZZ, IAK, SERPUL, MANUAL
+	BuyerSKUCode  string          `json:"buyer_sku_code"`            // Kode produk dari vendor (e.g. FIBP14)
+	Code          string          `json:"code"`                      // Kode unik sistem DewaCell (e.g. FIBP14)
+	Name          string          `json:"name"`                      // e.g. Promo Indosat Data 14GB 28 Hari
+	Brand         string          `json:"brand"`                     // Telkomsel, Indosat, XL, PLN, DANA
+	CostPrice     float64         `json:"cost_price"`                // Harga modal dari vendor (e.g. Rp 44.640)
+	OriginalPrice float64         `json:"original_price"`            // Alias harga modal untuk backward compatibility
+	Price         float64         `json:"price"`                     // Harga jual ke pelanggan/mitra
+	PointsReward  int64           `json:"points_reward"`             // Cashback DewaPoin
+	Status        string          `json:"status"`                    // ACTIVE, INACTIVE, GANGGUAN, EMPTY
 	Description   string          `json:"description"`
-	Stock         int             `json:"stock,omitempty"`
+	Stock         int             `json:"stock"`
 	ImageURL      string          `json:"image_url,omitempty"`
+	CreatedAt     time.Time       `json:"created_at,omitempty"`
 	UpdatedAt     time.Time       `json:"updated_at"`
+}
+
+// CreateProductRequest payload pembuatan produk baru
+type CreateProductRequest struct {
+	CategoryID   string  `json:"category_id"`              // WAJIB: Produk belum bisa dibuat jika kategori tidak ada
+	VendorCode   string  `json:"vendor_code,omitempty"`    // e.g. DIGIFLAZZ, IAK, SERPUL, MANUAL (default: MANUAL)
+	BuyerSKUCode string  `json:"buyer_sku_code,omitempty"` // e.g. FIBP14
+	Code         string  `json:"code,omitempty"`           // Kode unik (opsional, jika kosong diisi buyer_sku_code)
+	Name         string  `json:"name"`                     // e.g. Promo Indosat Data 14GB 28 Hari
+	Category     string  `json:"category,omitempty"`       // pulsa, data, pln, dll (opsional, diambil dari kategori)
+	Brand        string  `json:"brand,omitempty"`          // e.g. Indosat
+	CostPrice    float64 `json:"cost_price"`               // e.g. 44640 (Harga modal vendor)
+	Price        float64 `json:"price"`                    // e.g. 46000 (Harga jual)
+	PointsReward *int64  `json:"points_reward,omitempty"`  // Poin reward transaksi
+	Status       string  `json:"status,omitempty"`         // ACTIVE / INACTIVE (default: ACTIVE)
+	Description  string  `json:"description,omitempty"`
+	Stock        int     `json:"stock,omitempty"`
+	ImageURL     string  `json:"image_url,omitempty"`
+}
+
+// UpdateProductRequest payload update produk
+type UpdateProductRequest struct {
+	CategoryID   *string  `json:"category_id,omitempty"`
+	VendorCode   *string  `json:"vendor_code,omitempty"`
+	BuyerSKUCode *string  `json:"buyer_sku_code,omitempty"`
+	Code         *string  `json:"code,omitempty"`
+	Name         *string  `json:"name,omitempty"`
+	Brand        *string  `json:"brand,omitempty"`
+	CostPrice    *float64 `json:"cost_price,omitempty"`
+	Price        *float64 `json:"price,omitempty"`
+	PointsReward *int64   `json:"points_reward,omitempty"`
+	Status       *string  `json:"status,omitempty"`
+	Description  *string  `json:"description,omitempty"`
+	Stock        *int     `json:"stock,omitempty"`
+	ImageURL     *string  `json:"image_url,omitempty"`
 }

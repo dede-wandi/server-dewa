@@ -13,6 +13,7 @@ import (
 	"github.com/dede-wandi/server-dewa/internal/modules/article"
 	"github.com/dede-wandi/server-dewa/internal/modules/auth"
 	"github.com/dede-wandi/server-dewa/internal/modules/banner"
+	"github.com/dede-wandi/server-dewa/internal/modules/callback"
 	"github.com/dede-wandi/server-dewa/internal/modules/notification"
 	"github.com/dede-wandi/server-dewa/internal/modules/payment_channel"
 	"github.com/dede-wandi/server-dewa/internal/modules/product"
@@ -93,13 +94,23 @@ func New(cfg *config.Config) *chi.Mux {
 	paymentChannelHandler := payment_channel.NewHandler(sbClient)
 	appCategoryHandler := app_category.NewHandler(sbClient)
 	appMenuHandler := app_menu.NewHandler(sbClient, appCategoryHandler.GetService())
+	callbackHandler := callback.NewHandler(sbClient)
+
+	// Enterprise Universal Webhook: e.g. /product-service/v2.0/payment/callback-product
+	r.Mount("/product-service/v2.0/payment", callbackHandler.ProductServiceRoutes())
 
 	r.Route("/api/v1", func(api chi.Router) {
 		// Auth endpoints (public login/register/refresh, protected /me)
 		api.Mount("/auth", authHandler.Routes())
 
-		// Public catalog browsing (fast cached responses)
+		// Public catalog browsing (fast cached responses, supports /products & /product)
 		api.Mount("/products", productHandler.Routes())
+		api.Mount("/product", productHandler.Routes())
+
+		// Global webhooks & callbacks for payment gateways and PPOB vendors
+		api.Mount("/callback", callbackHandler.Routes())
+		api.Mount("/callbacks", callbackHandler.Routes())
+		api.Mount("/payment", callbackHandler.ProductServiceRoutes())
 
 		// Dynamic service menus for mobile app home screen & grid
 		api.Mount("/menus", appMenuHandler.Routes())
@@ -127,6 +138,8 @@ func New(cfg *config.Config) *chi.Mux {
 			adminRouter.Use(middleware.RequireAuth(sbClient))
 			adminRouter.Use(middleware.RequireRoles("admin", "superadmin"))
 			adminRouter.Mount("/", adminHandler.Routes())
+			adminRouter.Mount("/products", productHandler.AdminRoutes())
+			adminRouter.Mount("/product", productHandler.AdminRoutes())
 			adminRouter.Post("/products/sync", productHandler.SyncProducts)
 			adminRouter.Mount("/menus", appMenuHandler.AdminRoutes())
 			adminRouter.Mount("/categories", appCategoryHandler.AdminRoutes())

@@ -10,6 +10,7 @@ import (
 
 	"github.com/dede-wandi/server-dewa/internal/domain/role"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
+	"github.com/dede-wandi/server-dewa/internal/modules/vendor"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 	"github.com/go-chi/chi/v5"
@@ -93,6 +94,10 @@ func (h *Handler) Routes() chi.Router {
 	// Business Types & Extensible Merchant Models Registry
 	r.Get("/business-types", h.ListBusinessTypes)
 	r.Get("/roles", h.ListBusinessTypes)
+
+	// Vendor Balance & Monitoring (DFLASH / Generic)
+	r.Get("/vendor/balance", h.CheckVendorBalance)
+	r.Get("/vendor/{vendor}/balance", h.CheckVendorBalance)
 
 	return r
 }
@@ -568,5 +573,34 @@ func (h *Handler) ListAllWallets(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"count":  len(users),
 		"data":   users,
+	})
+}
+
+// CheckVendorBalance checks deposit balance on external vendor servers (e.g. DFLASH)
+func (h *Handler) CheckVendorBalance(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	vendorCode := chi.URLParam(r, "vendor")
+	if vendorCode == "" {
+		vendorCode = r.URL.Query().Get("vendor")
+		if vendorCode == "" {
+			vendorCode = "DFLASH"
+		}
+	}
+
+	bal, err := vendor.GetGlobalManager().CheckVendorBalance(r.Context(), vendorCode)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Informasi saldo akun vendor berhasil diambil",
+		"data":    bal,
 	})
 }

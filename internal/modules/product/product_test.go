@@ -7,12 +7,25 @@ import (
 
 func TestProductCatalogAndCache(t *testing.T) {
 	repo := NewCachedRepository(1 * time.Minute)
+	repo.Save(&Product{
+		ID:           "test-1",
+		CategoryID:   "cat-pulsa",
+		Category:     CategoryPulsa,
+		VendorCode:   "MANUAL",
+		BuyerSKUCode: "TSEL10",
+		Code:         "TSEL10",
+		Name:         "Telkomsel 10.000",
+		Brand:        "Telkomsel",
+		CostPrice:    10200,
+		Price:        11200,
+		Status:       "ACTIVE",
+	})
 	svc := NewService(repo, nil)
 
 	// Test list all products
 	all := svc.ListProducts("", "", "")
 	if len(all) == 0 {
-		t.Fatalf("expected default products to be loaded, got %d", len(all))
+		t.Fatalf("expected products to be loaded, got %d", len(all))
 	}
 
 	// Test category filtering
