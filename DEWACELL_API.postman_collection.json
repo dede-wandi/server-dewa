@@ -1326,6 +1326,58 @@
               }
             },
             {
+              "name": "Get Active Menus (Tree Mode)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/menus?tree=true",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "menus"
+                  ],
+                  "query": [
+                    {
+                      "key": "tree",
+                      "value": "true",
+                      "description": "Ambil seluruh menu beserta sub-menunya secara hierarkis bercabang (children: [])"
+                    }
+                  ]
+                },
+                "description": "Mengambil seluruh struktur menu dan sub-menu bersarang untuk navigasi dinamis aplikasi."
+              }
+            },
+            {
+              "name": "Get Sub Menus by Parent ID",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/menus?parent_id={{menu_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "menus"
+                  ],
+                  "query": [
+                    {
+                      "key": "parent_id",
+                      "value": "{{menu_id}}",
+                      "description": "UUID menu induk untuk mengambil daftar anak menu / sub-menu saja"
+                    }
+                  ]
+                },
+                "description": "Mengambil sub-menu spesifik dari suatu menu induk."
+              }
+            },
+            {
               "name": "Get Menu Detail",
               "request": {
                 "method": "GET",
@@ -2922,7 +2974,40 @@
           "name": "Manage App Menus",
           "item": [
             {
-              "name": "Get All Menus",
+              "name": "Get All Menus (Tree Mode)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/menus?tree=true",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "menus"
+                  ],
+                  "query": [
+                    {
+                      "key": "tree",
+                      "value": "true",
+                      "description": "Ambil seluruh menu dan sub-menunya secara hierarkis (children: [])"
+                    }
+                  ]
+                },
+                "description": "Mengambil semua menu beserta sub-menunya secara hierarki/bercabang (children: [])."
+              }
+            },
+            {
+              "name": "Get All Menus (Flat Mode)",
               "request": {
                 "method": "GET",
                 "header": [
@@ -2944,11 +3029,11 @@
                     "menus"
                   ]
                 },
-                "description": "Mengambil semua menu layanan aplikasi (aktif maupun non-aktif)."
+                "description": "Mengambil semua menu layanan aplikasi dalam format daftar datar (flat list)."
               }
             },
             {
-              "name": "Create Menu",
+              "name": "Create Menu Utama (Root)",
               "event": [
                 {
                   "listen": "test",
@@ -2981,7 +3066,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"code\": \"menu_pulsa\",\n  \"name\": \"Pulsa\",\n  \"subtitle\": \"Isi ulang pulsa murah\",\n  \"category_id\": \"{{category_id}}\",\n  \"action_type\": \"CATEGORY\",\n  \"target_url\": \"/service/pulsa\",\n  \"icon_type\": \"IONICONS\",\n  \"icon_name\": \"phone-portrait-outline\",\n  \"bg_color\": \"#EFF6FF\",\n  \"icon_color\": \"#2563EB\",\n  \"badge\": \"PROMO\",\n  \"badge_color\": \"#EF4444\",\n  \"placement\": \"HOME_GRID\",\n  \"sort_order\": 1,\n  \"is_active\": true,\n  \"is_coming_soon\": false\n}"
+                  "raw": "{\n  \"code\": \"menu_pulsa\",\n  \"name\": \"Pulsa\",\n  \"subtitle\": \"Isi ulang pulsa murah\",\n  \"category_id\": \"{{category_id}}\",\n  \"action_type\": \"ROUTE\",\n  \"target_url\": \"/service/pulsa\",\n  \"icon_type\": \"IONICONS\",\n  \"icon_name\": \"phone-portrait-outline\",\n  \"bg_color\": \"#EFF6FF\",\n  \"icon_color\": \"#2563EB\",\n  \"badge\": \"PROMO\",\n  \"badge_color\": \"#EF4444\",\n  \"placement\": \"HOME_GRID\",\n  \"sort_order\": 1,\n  \"is_active\": true,\n  \"is_coming_soon\": false\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/menus",
@@ -2995,7 +3080,58 @@
                     "menus"
                   ]
                 },
-                "description": "Menambahkan menu layanan baru. Admin bisa mengarahkan menu ke kategori tertentu (action_type: CATEGORY) atau rute aplikasi internal (action_type: ROUTE)."
+                "description": "Menambahkan menu utama tingkat 1 (Root Level tanpa parent_id)."
+              }
+            },
+            {
+              "name": "Create Sub Menu (Bercabang)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.data && jsonData.data.id) {",
+                      "    pm.collectionVariables.set('sub_menu_id', jsonData.data.id);",
+                      "    pm.environment.set('sub_menu_id', jsonData.data.id);",
+                      "    console.log('📌 sub_menu_id otomatis tersimpan:', jsonData.data.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"parent_id\": \"{{menu_id}}\",\n  \"code\": \"sub_pulsa_reguler\",\n  \"name\": \"Pulsa Reguler\",\n  \"subtitle\": \"Isi pulsa semua nomor\",\n  \"category_id\": \"{{category_id}}\",\n  \"action_type\": \"ROUTE\",\n  \"target_url\": \"/service/pulsa\",\n  \"icon_type\": \"IONICONS\",\n  \"icon_name\": \"phone-portrait\",\n  \"bg_color\": \"#EFF6FF\",\n  \"icon_color\": \"#2563EB\",\n  \"badge\": \"HEMAT\",\n  \"badge_color\": \"#10B981\",\n  \"placement\": \"HOME_GRID\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/menus",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "menus"
+                  ]
+                },
+                "description": "Membuat anak menu / sub-menu bercabang di bawah menu_id induk. Sub-menu ini bisa memiliki sub-menu lagi di bawahnya."
               }
             },
             {
@@ -3043,7 +3179,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Pulsa Semua Operator\",\n  \"badge\": \"HEMAT\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                  "raw": "{\n  \"category_id\": \"{{category_id}}\",\n  \"parent_id\": \"{{parent_menu_id}}\",\n  \"name\": \"Pulsa Semua Operator\",\n  \"action_type\": \"ROUTE\",\n  \"target_url\": \"/service/pulsa\",\n  \"badge\": \"HEMAT\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/menus/{{menu_id}}",
@@ -3058,7 +3194,7 @@
                     "{{menu_id}}"
                   ]
                 },
-                "description": "Mengupdate data menu layanan (target_url, category_id, icon, warna, badge, urutan, status aktif)."
+                "description": "Mengupdate data menu layanan (parent_id, target_url, category_id, icon, warna, badge, urutan, status aktif)."
               }
             },
             {
@@ -3085,11 +3221,11 @@
                     "{{menu_id}}"
                   ]
                 },
-                "description": "Menghapus menu layanan dari aplikasi pengguna."
+                "description": "Menghapus menu layanan dari aplikasi pengguna (sub-menu di bawahnya akan terhapus otomatis secara cascade)."
               }
             }
           ],
-          "description": "CRUD Pengelolaan Menu Layanan Pengguna: Membuat menu baru, mengarahkan ke kategori spesifik, mengganti ikon & badge secara dinamis."
+          "description": "CRUD Pengelolaan Menu Layanan Pengguna & Sub-Menu: Membuat menu utama, sub-menu bercabang bertingkat (Tree Mode), menghubungkan ke kategori, mengganti ikon & rute target."
         },
         {
           "name": "Manage App Categories",

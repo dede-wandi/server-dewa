@@ -24,24 +24,21 @@ func newUUID() string {
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-func ptrString(s string) *string {
-	return &s
-}
-
 type Service interface {
-	GetActiveMenus(placement string) ([]AppMenu, error)
-	GetAllMenus(placement string) ([]AppMenu, error)
+	GetActiveMenus(placement string, parentID string, level int, asTree bool) ([]AppMenu, error)
+	GetAllMenus(placement string, parentID string, level int, asTree bool) ([]AppMenu, error)
 	GetMenuByID(id string) (*AppMenu, error)
+	GetMenuByCode(code string) (*AppMenu, error)
 	CreateMenu(req CreateMenuRequest) (*AppMenu, error)
 	UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, error)
 	DeleteMenu(id string) error
 }
 
 type menuService struct {
-	sbClient    *supabase.Client
-	catService  app_category.Service
-	mu          sync.RWMutex
-	fallback    []AppMenu
+	sbClient   *supabase.Client
+	catService app_category.Service
+	mu         sync.RWMutex
+	fallback   []AppMenu
 }
 
 func NewService(sbClient *supabase.Client, catService app_category.Service) Service {
@@ -52,47 +49,89 @@ func NewService(sbClient *supabase.Client, catService app_category.Service) Serv
 	}
 }
 
-// populateCategory attaches the linked category object to the menu
-func (s *menuService) populateCategory(menu *AppMenu) {
-	if menu.CategoryID != nil && *menu.CategoryID != "" && s.catService != nil {
-		cat, err := s.catService.GetCategoryByID(*menu.CategoryID)
-		if err == nil && cat != nil {
-			menu.Category = cat
-		}
-	}
-}
+// buildMenuTree creates a hierarchical tree from a flat list of AppMenu
+func buildMenuTree(flat []AppMenu, rootParentID string) []AppMenu {
+	childrenMap := make(map[string][]AppMenu)
+	var roots []AppMenu
 
-func (s *menuService) filterFallback(activeOnly bool, placement string) []AppMenu {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []AppMenu
-	for _, m := range s.fallback {
-		if activeOnly && !m.IsActive {
-			continue
+	// Sort items by SortOrder ASC, then Name ASC
+	sort.Slice(flat, func(i, j int) bool {
+		if flat[i].SortOrder == flat[j].SortOrder {
+			return flat[i].Name < flat[j].Name
 		}
-		if placement != "" && !strings.EqualFold(m.Placement, placement) {
-			continue
-		}
-		item := m
-		s.populateCategory(&item)
-		result = append(result, item)
-	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].SortOrder < result[j].SortOrder
+		return flat[i].SortOrder < flat[j].SortOrder
 	})
 
-	return result
-}
+	for _, item := range flat {
+		pID := ""
+		if item.ParentID != nil {
+			pID = strings.TrimSpace(*item.ParentID)
+		}
 
-// GetActiveMenus returns active menus for mobile app (default placement HOME_GRID)
-func (s *menuService) GetActiveMenus(placement string) ([]AppMenu, error) {
-	if placement == "" {
-		placement = "HOME_GRID"
+		if (rootParentID == "" && pID == "") || (rootParentID != "" && pID == rootParentID) {
+			roots = append(roots, item)
+		} else if pID != "" {
+			childrenMap[pID] = append(childrenMap[pID], item)
+		}
 	}
 
-	queryParams := fmt.Sprintf("is_active=eq.true&placement=eq.%s&order=sort_order.asc,name.asc", url.QueryEscape(strings.ToUpper(placement)))
+	var attachChildren func(m *AppMenu)
+	attachChildren = func(m *AppMenu) {
+		if children, exists := childrenMap[m.ID]; exists {
+			for i := range children {
+				attachChildren(&children[i])
+			}
+			m.Children = children
+		} else {
+			m.Children = []AppMenu{}
+		}
+	}
+
+	for i := range roots {
+		attachChildren(&roots[i])
+	}
+
+	if roots == nil {
+		roots = []AppMenu{}
+	}
+	return roots
+}
+
+func (s *menuService) populateCategory(menu *AppMenu) {
+	if menu == nil || menu.CategoryID == nil || *menu.CategoryID == "" || s.catService == nil {
+		return
+	}
+	cat, err := s.catService.GetCategoryByID(*menu.CategoryID)
+	if err == nil && cat != nil {
+		menu.Category = cat
+	}
+}
+
+// GetActiveMenus returns active menus for mobile app (supports tree, placement, and parent filtering)
+func (s *menuService) GetActiveMenus(placement string, parentID string, level int, asTree bool) ([]AppMenu, error) {
+	var parts []string
+	parts = append(parts, "is_active=eq.true")
+
+	if placement != "" && strings.ToUpper(placement) != "ALL" {
+		parts = append(parts, fmt.Sprintf("placement=eq.%s", url.QueryEscape(strings.ToUpper(placement))))
+	}
+
+	if !asTree {
+		if parentID != "" {
+			if parentID == "null" || parentID == "root" {
+				parts = append(parts, "parent_id=is.null")
+			} else {
+				parts = append(parts, fmt.Sprintf("parent_id=eq.%s", url.QueryEscape(parentID)))
+			}
+		}
+		if level > 0 {
+			parts = append(parts, fmt.Sprintf("level=eq.%d", level))
+		}
+	}
+
+	parts = append(parts, "order=sort_order.asc,name.asc")
+	queryParams := strings.Join(parts, "&")
+
 	respBytes, err := s.sbClient.GetDB("app_menus", queryParams, "")
 	if err != nil {
 		log.Printf("[MenuService] GetActiveMenus DB query failed: %v", err)
@@ -108,18 +147,40 @@ func (s *menuService) GetActiveMenus(placement string) ([]AppMenu, error) {
 		s.populateCategory(&menus[i])
 	}
 
+	if asTree {
+		rootParentID := ""
+		if parentID != "" && parentID != "null" && parentID != "root" {
+			rootParentID = parentID
+		}
+		return buildMenuTree(menus, rootParentID), nil
+	}
+
 	if menus == nil {
 		menus = []AppMenu{}
 	}
 	return menus, nil
 }
 
-// GetAllMenus returns all menus for admin management
-func (s *menuService) GetAllMenus(placement string) ([]AppMenu, error) {
+// GetAllMenus returns all menus for admin management (supports tree, placement, parent, and level filtering)
+func (s *menuService) GetAllMenus(placement string, parentID string, level int, asTree bool) ([]AppMenu, error) {
 	var parts []string
-	if placement != "" {
+	if placement != "" && strings.ToUpper(placement) != "ALL" {
 		parts = append(parts, fmt.Sprintf("placement=eq.%s", url.QueryEscape(strings.ToUpper(placement))))
 	}
+
+	if !asTree {
+		if parentID != "" {
+			if parentID == "null" || parentID == "root" {
+				parts = append(parts, "parent_id=is.null")
+			} else {
+				parts = append(parts, fmt.Sprintf("parent_id=eq.%s", url.QueryEscape(parentID)))
+			}
+		}
+		if level > 0 {
+			parts = append(parts, fmt.Sprintf("level=eq.%d", level))
+		}
+	}
+
 	parts = append(parts, "order=sort_order.asc,name.asc")
 	queryParams := strings.Join(parts, "&")
 
@@ -138,68 +199,113 @@ func (s *menuService) GetAllMenus(placement string) ([]AppMenu, error) {
 		s.populateCategory(&menus[i])
 	}
 
+	if asTree {
+		rootParentID := ""
+		if parentID != "" && parentID != "null" && parentID != "root" {
+			rootParentID = parentID
+		}
+		return buildMenuTree(menus, rootParentID), nil
+	}
+
 	if menus == nil {
 		menus = []AppMenu{}
 	}
 	return menus, nil
 }
 
-// GetMenuByID returns a single menu by ID or code
+// GetMenuByID retrieves a single menu by UUID
 func (s *menuService) GetMenuByID(id string) (*AppMenu, error) {
-	queryParams := fmt.Sprintf("or=(id.eq.%s,code.eq.%s)&limit=1", url.QueryEscape(id), url.QueryEscape(id))
-	respBytes, err := s.sbClient.GetDB("app_menus", queryParams, "")
-	if err == nil {
-		var list []AppMenu
-		if err := json.Unmarshal(respBytes, &list); err == nil && len(list) > 0 {
-			menu := list[0]
-			s.populateCategory(&menu)
-			return &menu, nil
-		}
+	cleanID := strings.TrimSpace(id)
+	if cleanID == "" {
+		return nil, errors.New("id menu tidak boleh kosong")
 	}
 
-	return nil, errors.New("menu tidak ditemukan")
+	queryParams := fmt.Sprintf("id=eq.%s&limit=1", url.QueryEscape(cleanID))
+	respBytes, err := s.sbClient.GetDB("app_menus", queryParams, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var items []AppMenu
+	if err := json.Unmarshal(respBytes, &items); err != nil || len(items) == 0 {
+		return nil, fmt.Errorf("menu dengan id '%s' tidak ditemukan", cleanID)
+	}
+
+	menu := items[0]
+	s.populateCategory(&menu)
+	return &menu, nil
 }
 
-// CreateMenu inserts a new menu
+// GetMenuByCode retrieves a single menu by its unique code
+func (s *menuService) GetMenuByCode(code string) (*AppMenu, error) {
+	cleanCode := strings.TrimSpace(code)
+	if cleanCode == "" {
+		return nil, errors.New("kode menu tidak boleh kosong")
+	}
+
+	queryParams := fmt.Sprintf("code=eq.%s&limit=1", url.QueryEscape(cleanCode))
+	respBytes, err := s.sbClient.GetDB("app_menus", queryParams, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var items []AppMenu
+	if err := json.Unmarshal(respBytes, &items); err != nil || len(items) == 0 {
+		return nil, fmt.Errorf("menu dengan kode '%s' tidak ditemukan", cleanCode)
+	}
+
+	menu := items[0]
+	s.populateCategory(&menu)
+	return &menu, nil
+}
+
+// CreateMenu inserts a new service menu or sub-menu
 func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
-	if strings.TrimSpace(req.Name) == "" {
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
 		return nil, errors.New("nama menu wajib diisi")
 	}
 
-	now := time.Now()
-	newID := newUUID()
-
-	code := req.Code
+	code := strings.TrimSpace(req.Code)
 	if code == "" {
-		code = "menu_" + strings.ToLower(strings.ReplaceAll(req.Name, " ", "_"))
+		code = strings.ToLower(strings.ReplaceAll(req.Name, " ", "_"))
 	}
 
-	actionType := req.ActionType
+	// Cek apakah code sudah digunakan
+	existing, _ := s.GetMenuByCode(code)
+	if existing != nil {
+		code = fmt.Sprintf("%s_%d", code, time.Now().Unix()%1000)
+	}
+
+	newID := newUUID()
+	now := time.Now()
+
+	actionType := strings.ToUpper(strings.TrimSpace(req.ActionType))
 	if actionType == "" {
 		actionType = "CATEGORY"
 	}
 
-	iconType := req.IconType
+	iconType := strings.ToUpper(strings.TrimSpace(req.IconType))
 	if iconType == "" {
 		iconType = "IONICONS"
 	}
 
-	iconName := req.IconName
+	iconName := strings.TrimSpace(req.IconName)
 	if iconName == "" {
 		iconName = "grid-outline"
 	}
 
-	bgColor := req.BgColor
+	bgColor := strings.TrimSpace(req.BgColor)
 	if bgColor == "" {
 		bgColor = "#EFF6FF"
 	}
 
-	iconColor := req.IconColor
+	iconColor := strings.TrimSpace(req.IconColor)
 	if iconColor == "" {
 		iconColor = "#2563EB"
 	}
 
-	placement := req.Placement
+	placement := strings.ToUpper(strings.TrimSpace(req.Placement))
 	if placement == "" {
 		placement = "HOME_GRID"
 	}
@@ -220,8 +326,25 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 		categoryID = &clean
 	}
 
+	var parentID *string
+	level := 1
+	if req.ParentID != nil && strings.TrimSpace(*req.ParentID) != "" {
+		cleanParent := strings.TrimSpace(*req.ParentID)
+		parent, err := s.GetMenuByID(cleanParent)
+		if err != nil {
+			return nil, fmt.Errorf("parent menu dengan id '%s' tidak ditemukan: %w", cleanParent, err)
+		}
+		parentID = &cleanParent
+		level = parent.Level + 1
+	}
+	if req.Level != nil && *req.Level > 0 {
+		level = *req.Level
+	}
+
 	newMenu := AppMenu{
 		ID:           newID,
+		ParentID:     parentID,
+		Level:        level,
 		Code:         code,
 		Name:         req.Name,
 		Subtitle:     req.Subtitle,
@@ -239,6 +362,7 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 		SortOrder:    req.SortOrder,
 		IsActive:     isActive,
 		IsComingSoon: isComingSoon,
+		Children:     []AppMenu{},
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -261,11 +385,17 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 		"sort_order":     newMenu.SortOrder,
 		"is_active":      newMenu.IsActive,
 		"is_coming_soon": newMenu.IsComingSoon,
+		"level":          newMenu.Level,
 	}
 	if categoryID != nil {
 		payload["category_id"] = *categoryID
 	} else {
 		payload["category_id"] = nil
+	}
+	if parentID != nil {
+		payload["parent_id"] = *parentID
+	} else {
+		payload["parent_id"] = nil
 	}
 
 	respBytes, err := s.sbClient.PostDB("app_menus", payload, "return=representation", "")
@@ -283,7 +413,7 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 	return &newMenu, nil
 }
 
-// UpdateMenu modifies an existing menu
+// UpdateMenu modifies an existing menu or its parent/sub-menu link
 func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, error) {
 	current, err := s.GetMenuByID(id)
 	if err != nil {
@@ -315,6 +445,31 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 			current.CategoryID = &clean
 			payload["category_id"] = clean
 		}
+	}
+	if req.ParentID != nil {
+		clean := strings.TrimSpace(*req.ParentID)
+		if clean == "" || clean == "null" || clean == "root" {
+			current.ParentID = nil
+			current.Level = 1
+			payload["parent_id"] = nil
+			payload["level"] = 1
+		} else {
+			if clean == id {
+				return nil, errors.New("menu tidak dapat menjadi parent dari dirinya sendiri")
+			}
+			parent, err := s.GetMenuByID(clean)
+			if err != nil {
+				return nil, fmt.Errorf("parent menu dengan id '%s' tidak ditemukan", clean)
+			}
+			current.ParentID = &clean
+			current.Level = parent.Level + 1
+			payload["parent_id"] = clean
+			payload["level"] = current.Level
+		}
+	}
+	if req.Level != nil && *req.Level > 0 {
+		current.Level = *req.Level
+		payload["level"] = *req.Level
 	}
 	if req.ActionType != "" {
 		current.ActionType = req.ActionType
@@ -353,8 +508,8 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 		payload["badge_color"] = req.BadgeColor
 	}
 	if req.Placement != "" {
-		current.Placement = req.Placement
-		payload["placement"] = req.Placement
+		current.Placement = strings.ToUpper(req.Placement)
+		payload["placement"] = current.Placement
 	}
 	if req.SortOrder != nil {
 		current.SortOrder = *req.SortOrder
@@ -370,28 +525,34 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 	}
 
 	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
-	respBytes, err := s.sbClient.PatchDB("app_menus", queryParams, payload, "")
+	_, err = s.sbClient.PatchDB("app_menus", queryParams, payload, "")
 	if err != nil {
 		log.Printf("[MenuService] PatchDB failed: %v", err)
-		return nil, fmt.Errorf("gagal mengupdate menu di database: %w", err)
-	}
-
-	var updated []AppMenu
-	if err := json.Unmarshal(respBytes, &updated); err == nil && len(updated) > 0 {
-		current = &updated[0]
+		return nil, fmt.Errorf("gagal mengupdate menu: %w", err)
 	}
 
 	s.populateCategory(current)
 	return current, nil
 }
 
-// DeleteMenu removes a menu
+// DeleteMenu removes a menu and cascade-deletes its sub-menus
 func (s *menuService) DeleteMenu(id string) error {
-	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
-	err := s.sbClient.DeleteDB("app_menus", queryParams, "")
+	cleanID := strings.TrimSpace(id)
+	if cleanID == "" {
+		return errors.New("id menu tidak boleh kosong")
+	}
+
+	// Cek keberadaan menu
+	_, err := s.GetMenuByID(cleanID)
+	if err != nil {
+		return err
+	}
+
+	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(cleanID))
+	err = s.sbClient.DeleteDB("app_menus", queryParams, "")
 	if err != nil {
 		log.Printf("[MenuService] DeleteDB failed: %v", err)
-		return fmt.Errorf("gagal menghapus menu dari database: %w", err)
+		return fmt.Errorf("gagal menghapus menu: %w", err)
 	}
 
 	return nil

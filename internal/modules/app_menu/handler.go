@@ -3,6 +3,8 @@ package app_menu
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/dede-wandi/server-dewa/internal/modules/app_category"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
@@ -42,12 +44,25 @@ func (h *Handler) AdminRoutes() chi.Router {
 	return r
 }
 
+func parseMenuQueryParams(r *http.Request) (placement string, parentID string, level int, asTree bool) {
+	placement = r.URL.Query().Get("placement")
+	parentID = strings.TrimSpace(r.URL.Query().Get("parent_id"))
+	if lvlStr := r.URL.Query().Get("level"); lvlStr != "" {
+		if val, err := strconv.Atoi(lvlStr); err == nil {
+			level = val
+		}
+	}
+	treeParam := strings.ToLower(r.URL.Query().Get("tree"))
+	asTree = treeParam == "true" || treeParam == "1"
+	return
+}
+
 // GetActiveMenus returns active menus for home screen / mobile app
 func (h *Handler) GetActiveMenus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	placement := r.URL.Query().Get("placement")
+	placement, parentID, level, asTree := parseMenuQueryParams(r)
 
-	menus, err := h.service.GetActiveMenus(placement)
+	menus, err := h.service.GetActiveMenus(placement, parentID, level, asTree)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -67,9 +82,9 @@ func (h *Handler) GetActiveMenus(w http.ResponseWriter, r *http.Request) {
 // GetAllMenus returns all menus for Admin dashboard
 func (h *Handler) GetAllMenus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	placement := r.URL.Query().Get("placement")
+	placement, parentID, level, asTree := parseMenuQueryParams(r)
 
-	menus, err := h.service.GetAllMenus(placement)
+	menus, err := h.service.GetAllMenus(placement, parentID, level, asTree)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{

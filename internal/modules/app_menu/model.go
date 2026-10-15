@@ -6,9 +6,11 @@ import (
 	"github.com/dede-wandi/server-dewa/internal/modules/app_category"
 )
 
-// AppMenu model menu layanan aplikasi (Home Screen & Quick Action)
+// AppMenu model menu layanan aplikasi (Home Screen, Quick Action, Sub-Menus)
 type AppMenu struct {
 	ID           string                    `json:"id"`
+	ParentID     *string                   `json:"parent_id,omitempty"`
+	Level        int                       `json:"level"`
 	Code         string                    `json:"code"`
 	Name         string                    `json:"name"`
 	Subtitle     string                    `json:"subtitle,omitempty"`
@@ -27,11 +29,14 @@ type AppMenu struct {
 	SortOrder    int                       `json:"sort_order"`
 	IsActive     bool                      `json:"is_active"`
 	IsComingSoon bool                      `json:"is_coming_soon"`
+	Children     []AppMenu                 `json:"children,omitempty"`
 	CreatedAt    time.Time                 `json:"created_at"`
 	UpdatedAt    time.Time                 `json:"updated_at"`
 }
 
 type CreateMenuRequest struct {
+	ParentID     *string `json:"parent_id,omitempty"`
+	Level        *int    `json:"level,omitempty"`
 	Code         string  `json:"code"`
 	Name         string  `json:"name"`
 	Subtitle     string  `json:"subtitle,omitempty"`
@@ -52,6 +57,8 @@ type CreateMenuRequest struct {
 }
 
 type UpdateMenuRequest struct {
+	ParentID     *string `json:"parent_id,omitempty"`
+	Level        *int    `json:"level,omitempty"`
 	Code         string  `json:"code,omitempty"`
 	Name         string  `json:"name,omitempty"`
 	Subtitle     string  `json:"subtitle,omitempty"`
