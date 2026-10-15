@@ -538,7 +538,7 @@
                                 ],
                                 "body": {
                                     "mode": "raw",
-                                    "raw": "{\n  \"amount\": 50000,\n  \"channel\": \"BCA Virtual Account\",\n  \"notes\": \"Isi saldo aplikasi\"\n}"
+                                    "raw": "{\n  \"amount\": 50000,\n  \"channel\": \"fund_credit\",\n  \"notes\": \"Permintaan top up via fund_credit (transfer manual)\"\n}"
                                 },
                                 "url": {
                                     "raw": "{{base_url}}/api/v1/wallet/topup",
@@ -552,7 +552,7 @@
                                         "topup"
                                     ]
                                 },
-                                "description": "Membuat permohonan deposit saldo dengan status PENDING. Saldo baru masuk setelah diverifikasi/disetujui Admin atau payment gateway callback."
+                                "description": "Membuat permohonan deposit saldo via channel fund_credit dengan status PENDING. Saldo masuk setelah diverifikasi/disetujui Admin."
                             }
                         },
 
@@ -1791,7 +1791,7 @@
                                 ],
                                 "body": {
                                     "mode": "raw",
-                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"amount\": 100000,\n  \"channel\": \"Transfer Bank BCA\",\n  \"notes\": \"Top up saldo deposit kasir oleh Super Admin\"\n}"
+                                    "raw": "{\n  \"target_user_id\": \"{{target_user_id}}\",\n  \"amount\": 100000,\n  \"channel\": \"fund_credit\",\n  \"notes\": \"Top up saldo akun pengguna oleh Super Admin via fund_credit\"\n}"
                                 },
                                 "url": {
                                     "raw": "{{base_url}}/api/v1/admin/wallets/topup",
@@ -1806,7 +1806,7 @@
                                         "topup"
                                     ]
                                 },
-                                "description": "Super Admin menambahkan saldo pengguna secara langsung dengan pencatatan audit trail."
+                                "description": "Super Admin menambahkan saldo pengguna secara langsung via channel fund_credit dengan pencatatan audit trail."
                             }
                         },
                         {

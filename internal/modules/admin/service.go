@@ -442,8 +442,8 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 	}
 
 	channel := strings.TrimSpace(req.Channel)
-	if channel == "" {
-		channel = "Deposit Tunai / Transfer Admin"
+	if channel == "" || !isPaymentGateway(channel) {
+		channel = "fund_credit"
 	}
 
 	title := strings.TrimSpace(req.Title)
@@ -464,6 +464,20 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 	}
 
 	refID := fmt.Sprintf("TOPUP-ADM-%s-%d", time.Now().Format("20060102"), time.Now().UnixNano()%100000)
+
+	// Send in-app notification to target user asynchronously
+	if s.sbClient != nil {
+		notifPayload := map[string]interface{}{
+			"user_id": req.TargetUserID,
+			"type":    "PAYMENT",
+			"title":   "Top Up Saldo Berhasil",
+			"message": fmt.Sprintf("Saldo sebesar Rp %s berhasil ditambahkan ke akun Anda via %s.", formatRupiahAdmin(int64(req.Amount)), channel),
+			"status":  "Belum Dibaca",
+		}
+		go func() {
+			_, _ = s.sbClient.PostDB("notifications", notifPayload, "", token)
+		}()
+	}
 
 	// 1. Try Supabase RPC process_app_wallet_mutation
 	if s.sbClient != nil {
@@ -493,6 +507,7 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 						"user_id":          req.TargetUserID,
 						"type":             wallet.TypeCredit,
 						"category":         wallet.CategoryTopup,
+						"channel":          channel,
 						"amount":           req.Amount,
 						"balance_before":   balBefore,
 						"balance_after":    balAfter,
@@ -531,6 +546,7 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 				"user_id":          req.TargetUserID,
 				"type":             wallet.TypeCredit,
 				"category":         wallet.CategoryTopup,
+				"channel":          channel,
 				"amount":           req.Amount,
 				"balance_before":   balBefore,
 				"balance_after":    balAfter,
@@ -550,6 +566,16 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 	}
 
 	return nil, errors.New("Layanan dompet tidak tersedia")
+}
+
+func isPaymentGateway(channel string) bool {
+	ch := strings.ToUpper(strings.TrimSpace(channel))
+	switch ch {
+	case "BCA", "QRIS", "MANDIRI", "BRI", "BNI", "BCA VIRTUAL ACCOUNT", "MANDIRI LIVIN VA", "BRI BRIVA", "QRIS SEMUA BANK":
+		return true
+	default:
+		return false
+	}
 }
 
 func formatRupiahAdmin(amount int64) string {

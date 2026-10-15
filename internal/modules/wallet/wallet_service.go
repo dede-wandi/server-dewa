@@ -292,15 +292,35 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 	return trx, wal, nil
 }
 
+func isPaymentGatewayChannel(channel string) bool {
+	ch := strings.ToUpper(strings.TrimSpace(channel))
+	switch ch {
+	case "BCA", "QRIS", "MANDIRI", "BRI", "BNI", "BCA VIRTUAL ACCOUNT", "MANDIRI LIVIN VA", "BRI BRIVA", "QRIS SEMUA BANK":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*WalletTransaction, *Wallet, error) {
 	if req.Amount <= 0 {
 		return nil, nil, errors.New("Nominal top up harus lebih besar dari 0")
 	}
 	channel := strings.TrimSpace(req.Channel)
 	if channel == "" {
-		channel = "BCA Virtual Account"
+		channel = strings.TrimSpace(req.PaymentMethod)
+	}
+	if channel == "" || !isPaymentGatewayChannel(channel) {
+		channel = "fund_credit"
 	}
 	notes := strings.TrimSpace(req.Notes)
+
+	title := fmt.Sprintf("Permintaan Top Up Saldo via %s", channel)
+	desc := "Menunggu pembayaran dan verifikasi admin / callback payment gateway"
+	if channel == "fund_credit" {
+		title = "Permintaan Top Up Saldo (Fund Credit)"
+		desc = "Menunggu transfer manual dan verifikasi Super Admin (Fund Credit)"
+	}
 
 	// 1. Try Supabase RPC request_app_wallet_topup (returns status PENDING)
 	if s.sbClient != nil && token != "" {
@@ -326,11 +346,12 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 					UserID:          userID,
 					Type:            TypeCredit,
 					Category:        CategoryTopup,
+					Channel:         channel,
 					Amount:          req.Amount,
 					BalanceBefore:   wal.Balance,
 					BalanceAfter:    wal.Balance, // Saldo tidak bertambah saat masih PENDING
-					Title:           fmt.Sprintf("Permintaan Top Up Saldo via %s", channel),
-					Description:     "Menunggu pembayaran dan verifikasi admin / callback payment gateway",
+					Title:           title,
+					Description:     desc,
 					ReferenceID:     paymentCode,
 					AdminNotes:      notes,
 					Status:          "PENDING",
@@ -350,7 +371,10 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 
 	trxCode := fmt.Sprintf("TOP-%s-%06d", time.Now().Format("20060102"), rand.Intn(900000)+100000)
 	cleanChannel := strings.ToUpper(strings.ReplaceAll(channel, " ", ""))
-	refID := fmt.Sprintf("VA-%s-%d", cleanChannel, time.Now().Unix())
+	refID := fmt.Sprintf("FC-%d", time.Now().Unix())
+	if isPaymentGatewayChannel(channel) {
+		refID = fmt.Sprintf("VA-%s-%d", cleanChannel, time.Now().Unix())
+	}
 
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("top-%d", time.Now().UnixNano()),
@@ -358,11 +382,12 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 		UserID:          userID,
 		Type:            TypeCredit,
 		Category:        CategoryTopup,
+		Channel:         channel,
 		Amount:          req.Amount,
 		BalanceBefore:   wal.Balance,
 		BalanceAfter:    wal.Balance, // Saldo tetap sebelum disetujui
-		Title:           fmt.Sprintf("Permintaan Top Up Saldo via %s", channel),
-		Description:     "Menunggu pembayaran dan verifikasi admin / callback payment gateway",
+		Title:           title,
+		Description:     desc,
 		ReferenceID:     refID,
 		AdminNotes:      notes,
 		Status:          "PENDING",

@@ -43,6 +43,7 @@ type WalletTransaction struct {
 	BalanceAfter    float64   `json:"balance_after"`
 	Title           string    `json:"title"`       // Nama jelas transaksi
 	Description     string    `json:"description"` // Keterangan rinci
+	Channel         string    `json:"channel,omitempty"`
 	ReferenceID     string    `json:"reference_id,omitempty"`
 	AdminID         string    `json:"admin_id,omitempty"`
 	AdminEmail      string    `json:"admin_email,omitempty"`
@@ -91,9 +92,10 @@ type TransferRequest struct {
 
 // TopUpRequest represents a balance deposit request
 type TopUpRequest struct {
-	Amount  float64 `json:"amount"`
-	Channel string  `json:"channel"`
-	Notes   string  `json:"notes,omitempty"`
+	Amount        float64 `json:"amount"`
+	Channel       string  `json:"channel,omitempty"`
+	PaymentMethod string  `json:"payment_method,omitempty"`
+	Notes         string  `json:"notes,omitempty"`
 }
 
 // ApproveTopUpRequest represents admin approval for pending topup
