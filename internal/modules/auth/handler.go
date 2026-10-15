@@ -72,6 +72,7 @@ type LoginRequest struct {
 	DeviceID   string `json:"device_id,omitempty"`
 	DeviceName string `json:"device_name,omitempty"`
 	DeviceOS   string `json:"device_os,omitempty"`
+	Location   string `json:"location,omitempty"`
 }
 
 type RegisterRequest struct {
@@ -173,8 +174,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deteksi Device & IP untuk Audit Log Database & Notifikasi Keamanan Pengguna
-	go func(userUUID string, userEmail string, loginReq LoginRequest, userAgent string, remoteAddr string, xForwardedFor string, xRealIP string, xDeviceID string, xDeviceName string, xDeviceOS string) {
+	// Deteksi Device, Lokasi & IP untuk Audit Log Database & Notifikasi Keamanan Pengguna
+	go func(userUUID string, userEmail string, loginReq LoginRequest, userAgent string, remoteAddr string, xForwardedFor string, xRealIP string, xDeviceID string, xDeviceName string, xDeviceOS string, xDeviceLocation string) {
 		// 1. Ekstrak IP Address
 		clientIP := strings.TrimSpace(xForwardedFor)
 		if clientIP != "" {
@@ -213,6 +214,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			deviceOS = strings.TrimSpace(xDeviceOS)
 		}
 
+		location := strings.TrimSpace(loginReq.Location)
+		if location == "" {
+			location = strings.TrimSpace(xDeviceLocation)
+		}
+
 		if deviceName == "" {
 			if strings.Contains(userAgent, "iPhone") {
 				deviceName = "Apple iPhone"
@@ -225,7 +231,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			} else if strings.Contains(userAgent, "Linux") {
 				deviceName = "Linux Desktop"
 			} else {
-				deviceName = "Aplikasi DewaCell"
+				deviceName = "Perangkat Pengguna"
 			}
 		}
 
@@ -254,18 +260,24 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			"device_id":   deviceID,
 			"device_name": deviceName,
 			"device_os":   deviceOS,
+			"location":    location,
 			"ip_address":  clientIP,
 			"user_agent":  userAgent,
 			"created_at":  time.Now(),
 		}
 		_, _ = h.sb.PostDB("user_login_logs", loginLogRecord, "", "")
 
-		// 5. Catat notifikasi keamanan login (tidak dapat dihapus)
-		title := fmt.Sprintf("🛡️ Login Berhasil: %s", deviceName)
-		msg := fmt.Sprintf("Akun DewaCell Anda baru saja login dari perangkat %s (%s, ID: %s) pada %s (IP: %s). Catatan keamanan ini tidak dapat dihapus demi perlindungan akun Anda.",
-			deviceName, deviceOS, deviceID, loginTimeStr, clientIP)
+		// 5. Catat notifikasi keamanan login
+		locSuffix := ""
+		if location != "" {
+			locSuffix = fmt.Sprintf(" di %s", location)
+		}
 
-		isDeletable := false
+		title := fmt.Sprintf("🛡️ Aktivitas Login: %s", deviceName)
+		msg := fmt.Sprintf("Akun Anda baru saja login dari perangkat %s (%s)%s pada %s (IP: %s). Jika Anda tidak merasa melakukan aktivitas ini atau perangkat tidak dikenali, segera amankan akun Anda dengan mengganti PIN atau Password.",
+			deviceName, deviceOS, locSuffix, loginTimeStr, clientIP)
+
+		isDeletable := true
 		refID := fmt.Sprintf("LOG-%s", time.Now().Format("20060102150405"))
 
 		if h.notifService != nil {
@@ -276,9 +288,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				Type:        string(notification.TypeSecurity),
 				IsDeletable: &isDeletable,
 				ReferenceID: refID,
+				ActionURL:   "/(tabs)/settings?action=change_pin",
 			})
 		}
-	}(authResp.User.ID, cleanEmail, req, r.UserAgent(), r.RemoteAddr, r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"), r.Header.Get("X-Device-ID"), r.Header.Get("X-Device-Name"), r.Header.Get("X-Device-OS"))
+	}(authResp.User.ID, cleanEmail, req, r.UserAgent(), r.RemoteAddr, r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"), r.Header.Get("X-Device-ID"), r.Header.Get("X-Device-Name"), r.Header.Get("X-Device-OS"), r.Header.Get("X-Device-Location"))
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{

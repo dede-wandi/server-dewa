@@ -12,10 +12,14 @@ CREATE TABLE IF NOT EXISTS public.user_login_logs (
     device_id VARCHAR(100) DEFAULT '',
     device_name VARCHAR(100) DEFAULT '',
     device_os VARCHAR(100) DEFAULT '',
+    location VARCHAR(150) DEFAULT '',
     ip_address VARCHAR(50) DEFAULT '',
     user_agent TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Ensure column exists if table was previously created
+ALTER TABLE public.user_login_logs ADD COLUMN IF NOT EXISTS location VARCHAR(150) DEFAULT '';
 
 -- Indexing for fast fetch
 CREATE INDEX IF NOT EXISTS idx_user_login_logs_user ON public.user_login_logs(user_id, created_at DESC);
