@@ -202,7 +202,7 @@ func (s *service) GetOrderDetail(orderCode string) (*Order, error) {
 	if s.walletService != nil {
 		allTrx := s.walletService.GetAllTransactions()
 		for _, trx := range allTrx {
-			if trx != nil && (strings.ToUpper(trx.TransactionCode) == clean || strings.ToUpper(trx.ReferenceID) == clean) {
+			if trx != nil && (strings.EqualFold(trx.TransactionCode, clean) || strings.EqualFold(trx.ReferenceID, clean) || strings.EqualFold(trx.ID, clean)) {
 				if o := mapWalletTrxToOrder(trx); o != nil {
 					return o, nil
 				}
@@ -307,9 +307,22 @@ func mapWalletTrxToOrder(trx *wallet.WalletTransaction) *Order {
 		return nil
 	}
 
-	orderCode := trx.ReferenceID
-	if orderCode == "" {
-		orderCode = trx.TransactionCode
+	orderCode := strings.TrimSpace(trx.ReferenceID)
+	isUUID := func(s string) bool {
+		return len(s) == 36 && strings.Count(s, "-") == 4
+	}
+
+	if orderCode == "" || isUUID(orderCode) {
+		if trx.TransactionCode != "" && !isUUID(trx.TransactionCode) {
+			orderCode = trx.TransactionCode
+		} else {
+			dateStr := trx.CreatedAt.Format("20060102")
+			if dateStr == "00010101" {
+				dateStr = time.Now().Format("20060102")
+			}
+			suffix := rand.Intn(900000) + 100000
+			orderCode = fmt.Sprintf("ORD-%s-%06d", dateStr, suffix)
+		}
 	}
 
 	prodName := strings.TrimPrefix(trx.Title, "Pembelian ")
