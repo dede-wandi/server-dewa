@@ -118,11 +118,11 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		CreatedAt:       now,
 	}
 
-	// 5. Eksekusi Pengiriman ke Provider / Switching PPOB (DFLASH / Vendor Resmi)
+	// 5. Eksekusi Pengiriman ke Provider / Switching PPOB
 	vMgr := vendor.GetGlobalManager()
 	vendorCode := strings.ToUpper(strings.TrimSpace(prod.VendorCode))
-	if vendorCode == "" || vendorCode == "MANUAL" {
-		vendorCode = "DFLASH" // Defaultkan otomatis ke server vendor DFLASH
+	if vendorCode == "" {
+		vendorCode = "MANUAL" // Jika kosong, set ke MANUAL (tidak akan menembak DFLASH)
 	}
 
 	sku := strings.TrimSpace(prod.BuyerSKUCode)
@@ -160,9 +160,9 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		}
 		refTrx, _, errRefund := s.walletService.Refund(user, token, refundReq)
 		if errRefund != nil {
-			log.Printf("⚠️ [AUTO-REFUND WARNING] Gagal auto-refund untuk %s: %v", orderCode, errRefund)
+			log.Printf("Gagal auto-refund untuk %s: %v", orderCode, errRefund)
 		} else if refTrx != nil {
-			log.Printf("💰 [AUTO-REFUND SUCCESS] Saldo berhasil direfund otomatis! TrxCode=%s, Amount=Rp %.0f", refTrx.TransactionCode, refTrx.Amount)
+			log.Printf("Saldo berhasil direfund TrxCode=%s, Amount=Rp %.0f", refTrx.TransactionCode, refTrx.Amount)
 		}
 		order.Status = StatusRefunded
 		s.repo.CreateOrder(order)

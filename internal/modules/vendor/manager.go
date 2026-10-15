@@ -22,8 +22,12 @@ var (
 func GetGlobalManager() *VendorManager {
 	once.Do(func() {
 		globalManager = NewVendorManager()
-		// Daftarkan adapter vendor resmi DFLASH untuk seluruh transaksi live
+		// 1. Daftarkan adapter vendor resmi DFLASH
 		globalManager.RegisterAdapter(NewDFlashAdapter("H2H02494", "112211", "DUNhil00@#", ""))
+		// 2. Daftarkan adapter untuk produk MANUAL (tanpa menembak API vendor luar)
+		globalManager.RegisterAdapter(NewManualAdapter())
+		// NOTE: Untuk vendor baru berikutnya (misal Digiflazz, IAK, Serpul, dsb.), cukup daftarkan di sini:
+		// globalManager.RegisterAdapter(NewDigiflazzAdapter(...))
 	})
 	return globalManager
 }
@@ -43,19 +47,19 @@ func (m *VendorManager) RegisterAdapter(adapter IVendorAdapter) {
 	m.adapters[key] = adapter
 }
 
-// GetAdapter mengambil adapter berdasarkan nama/kode vendor
+// GetAdapter mengambil adapter berdasarkan nama/kode vendor secara ketat (Strict Vendor Routing)
 func (m *VendorManager) GetAdapter(vendorCode string) (IVendorAdapter, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	key := strings.ToUpper(strings.TrimSpace(vendorCode))
-	if key == "" || key == "MANUAL" || key == "DEFAULT" || key == "MOCK" {
-		key = "DFLASH"
+	if key == "" {
+		key = "MANUAL" // Default aman ke MANUAL (tidak akan pernah menembak DFLASH)
 	}
 
 	adapter, exists := m.adapters[key]
 	if !exists {
-		return nil, fmt.Errorf("vendor '%s' tidak didukung atau belum terdaftar di sistem", vendorCode)
+		return nil, fmt.Errorf("vendor '%s' tidak didukung atau belum terdaftar di sistem. Transaksi tidak diteruskan demi keamanan", vendorCode)
 	}
 	return adapter, nil
 }
