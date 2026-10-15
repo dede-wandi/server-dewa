@@ -51,262 +51,6 @@ func NewService(sbClient *supabase.Client) Service {
 	return s
 }
 
-// generateDefaultNotifications provides 20 realistic notifications in Indonesian
-func generateDefaultNotifications(userID string) []Notification {
-	now := time.Now()
-	notifs := []Notification{
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🎉 Selamat Datang di DewaCell!",
-			Message:     "Akun Anda berhasil aktif. Mulai jualan pulsa, paket data, dan bayar tagihan PPOB termurah se-Indonesia sekarang juga.",
-			Type:        string(TypeAnnouncement),
-			StatusBaca:  StatusBelumDibaca,
-			IsRead:      false,
-			ReferenceID: "WELC-001",
-			ActionURL:   "/(tabs)",
-			CreatedAt:   now.Add(-10 * time.Minute),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "💳 Top Up Saldo Berhasil",
-			Message:     "Deposit saldo sebesar Rp 100.000 via Transfer Bank BCA telah berhasil ditambahkan ke dompet akun Anda.",
-			Type:        string(TypePayment),
-			StatusBaca:  StatusBelumDibaca,
-			IsRead:      false,
-			ReferenceID: "TOPUP-BCA-88912",
-			ActionURL:   "/(tabs)/wallet",
-			CreatedAt:   now.Add(-25 * time.Minute),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "⚡ Transaksi Token Listrik PLN Sukses",
-			Message:     "Pembelian Token PLN Rp 50.000 untuk No Meter 14285910245 SUKSES. Struk transaksi siap dicetak.",
-			Type:        string(TypeTransaction),
-			StatusBaca:  StatusBelumDibaca,
-			IsRead:      false,
-			ReferenceID: "TRX-PLN-55410",
-			ActionURL:   "/(tabs)/orders",
-			CreatedAt:   now.Add(-1 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "📱 Paket Data Telkomsel 14GB Sukses",
-			Message:     "Pengisian Kuota Telkomsel Max 14GB ke 081234567890 berhasil diproses dalam 3 detik.",
-			Type:        string(TypeTransaction),
-			StatusBaca:  StatusBelumDibaca,
-			IsRead:      false,
-			ReferenceID: "TRX-TSEL-99021",
-			ActionURL:   "/(tabs)/orders",
-			CreatedAt:   now.Add(-2 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🔥 Promo Kilat Cashback Saldo 5%",
-			Message:     "Dapatkan cashback saldo hingga Rp 25.000 untuk setiap transaksi produk E-Money (DANA, OVO, GoPay) hari ini!",
-			Type:        string(TypePromo),
-			StatusBaca:  StatusBelumDibaca,
-			IsRead:      false,
-			ReferenceID: "PROMO-EMN-05",
-			ActionURL:   "/(tabs)",
-			CreatedAt:   now.Add(-4 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🛡️ Keamanan: PIN Transaksi Aktif",
-			Message:     "PIN Keamanan 6 Digit dompet digital Anda telah berhasil diatur. Semua transaksi transfer kini terlindungi maksimal.",
-			Type:        string(TypeSecurity),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "PIN-SET-001",
-			ActionURL:   "/(tabs)/wallet",
-			CreatedAt:   now.Add(-6 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "💸 Pembayaran Merchant QRIS Berhasil",
-			Message:     "Pembayaran sebesar Rp 35.000 ke 'Kopi Kenangan' via Saldo DewaCell berhasil diproses.",
-			Type:        string(TypePayment),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "QRIS-887102",
-			ActionURL:   "/(tabs)/wallet",
-			CreatedAt:   now.Add(-8 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🎁 Bonus Reward 100 Poin Dewa",
-			Message:     "Selamat! Anda mendapatkan 100 Poin Dewa dari transaksi aktif minggu ini. Tukarkan poin dengan saldo gratis.",
-			Type:        string(TypePromo),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "POINT-RW-100",
-			ActionURL:   "/(tabs)/wallet",
-			CreatedAt:   now.Add(-12 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "📲 Pulsa Indosat 25.000 Berhasil",
-			Message:     "Pengisian Pulsa Indosat Ooredoo Rp 25.000 ke 085712349910 telah berhasil masuk ke pelanggan.",
-			Type:        string(TypeTransaction),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TRX-ISAT-33104",
-			ActionURL:   "/(tabs)/orders",
-			CreatedAt:   now.Add(-16 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "📢 Pembaruan Server & Jalur Transaksi",
-			Message:     "Optimasi jalur transaksi PPOB selesai dilakukan. Kecepatan respon server kini meningkat 300% lebih gesit.",
-			Type:        string(TypeAnnouncement),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "SYS-UPD-991",
-			ActionURL:   "/(tabs)",
-			CreatedAt:   now.Add(-24 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "💰 Top Up Saldo Rp 500.000 Sukses",
-			Message:     "Top up saldo via Virtual Account Mandiri berhasil diverifikasi secara otomatis tanpa biaya admin.",
-			Type:        string(TypePayment),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TOPUP-MDR-7712",
-			ActionURL:   "/(tabs)/wallet",
-			CreatedAt:   now.Add(-28 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "💧 Pembayaran Tagihan PDAM Berhasil",
-			Message:     "Pembayaran PDAM Tirta Moedal Semarang No Pelanggan 901827402 Sebesar Rp 82.500 berhasil.",
-			Type:        string(TypeTransaction),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TRX-PDAM-6612",
-			ActionURL:   "/(tabs)/orders",
-			CreatedAt:   now.Add(-32 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🔄 Transfer Saldo Antar Mitra Berhasil",
-			Message:     "Transfer saldo Rp 50.000 ke mitra 'Dewa Cell Cabang 2' (081299887711) berhasil terkirim instan.",
-			Type:        string(TypePayment),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TRF-MITRA-002",
-			ActionURL:   "/(tabs)/wallet",
-			CreatedAt:   now.Add(-36 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🎯 Target Transaksi Bulanan Tercapai!",
-			Message:     "Hebat! Anda telah melampaui 50 transaksi bulan ini. Upgrade status Mitra ke level VIP kini terbuka.",
-			Type:        string(TypePromo),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TIER-VIP-OPEN",
-			ActionURL:   "/(tabs)/settings",
-			CreatedAt:   now.Add(-40 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🔒 Login Baru Terdeteksi",
-			Message:     "Akun Anda baru saja terdeteksi masuk melalui perangkat Android (Expo Mobile App). Jika ini bukan Anda, segera ganti password.",
-			Type:        string(TypeSecurity),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "SEC-LOG-881",
-			ActionURL:   "/(tabs)/settings",
-			CreatedAt:   now.Add(-48 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🎮 Top Up Diamond Mobile Legends Sukses",
-			Message:     "Voucher 86 Diamonds MLBB ke ID: 12984920 (Zone 2102) sukses masuk ke akun game pelanggan.",
-			Type:        string(TypeTransaction),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TRX-MLBB-9012",
-			ActionURL:   "/(tabs)/orders",
-			CreatedAt:   now.Add(-54 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🩺 Pembayaran BPJS Kesehatan Berhasil",
-			Message:     "Iuran BPJS Kesehatan 1 Keluarga Rp 105.000 No VA 8888801928472910 sukses dibayar.",
-			Type:        string(TypeTransaction),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TRX-BPJS-4412",
-			ActionURL:   "/(tabs)/orders",
-			CreatedAt:   now.Add(-60 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🏷️ Diskon Produk Pulsa Tri (3) 10%",
-			Message:     "Harga modal pulsa Tri nominal 50rb & 100rb sedang promo spesial akhir pekan.",
-			Type:        string(TypePromo),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "PROMO-TRI-10",
-			ActionURL:   "/(tabs)",
-			CreatedAt:   now.Add(-72 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "📶 Voucher WiFi ID 20.000 Sukses",
-			Message:     "Username dan Password voucher seamless WiFi ID telah terbit dan struk siap diserahkan.",
-			Type:        string(TypeTransaction),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "TRX-WIFI-1102",
-			ActionURL:   "/(tabs)/orders",
-			CreatedAt:   now.Add(-80 * time.Hour),
-		},
-		{
-			ID:          newUUID(),
-			UserID:      userID,
-			Title:       "🔔 Tips Jualan Konter: Cetak Struk Bluetooth",
-			Message:     "Simak panduan terbaru menghubungkan printer thermal bluetooth 58mm untuk meningkatkan kredibilitas konter Anda.",
-			Type:        string(TypeAnnouncement),
-			StatusBaca:  StatusSudahDibaca,
-			IsRead:      true,
-			ReferenceID: "ART-NEWS-001",
-			ActionURL:   "/article/cara-cetak-struk-kasir-pos-bluetooth",
-			CreatedAt:   now.Add(-96 * time.Hour),
-		},
-	}
-
-	for i := range notifs {
-		if notifs[i].Type == string(TypeSecurity) {
-			notifs[i].IsDeletable = false
-		} else {
-			notifs[i].IsDeletable = true
-		}
-	}
-	return notifs
-}
-
 // GetUserNotifications returns max 20 notifications for the user with optional filters
 func (s *notificationService) GetUserNotifications(userID, filterType, filterStatus string, limit int) ([]Notification, int, error) {
 	if limit <= 0 || limit > 20 {
@@ -335,7 +79,7 @@ func (s *notificationService) GetUserNotifications(userID, filterType, filterSta
 	respBytes, err := s.sbClient.GetDB("notifications", queryParams, "")
 	if err == nil {
 		var notifs []Notification
-		if err := json.Unmarshal(respBytes, &notifs); err == nil && len(notifs) > 0 {
+		if err := json.Unmarshal(respBytes, &notifs); err == nil {
 			// Count total unread
 			unreadCount := 0
 			for _, n := range notifs {
@@ -353,7 +97,7 @@ func (s *notificationService) GetUserNotifications(userID, filterType, filterSta
 
 	userList, ok := s.store[userID]
 	if !s.userInitialized[userID] && !ok {
-		userList = generateDefaultNotifications(userID)
+		userList = make([]Notification, 0)
 		// Tambahkan broadcast global yang belum diterima user
 		for _, b := range s.broadcasts {
 			userNotif := Notification{
@@ -430,7 +174,7 @@ func (s *notificationService) MarkAsRead(userID, id string) (*Notification, erro
 
 	list, ok := s.store[userID]
 	if !ok {
-		list = generateDefaultNotifications(userID)
+		list = make([]Notification, 0)
 		s.store[userID] = list
 	}
 
@@ -463,7 +207,7 @@ func (s *notificationService) MarkAsUnread(userID, id string) (*Notification, er
 
 	list, ok := s.store[userID]
 	if !ok {
-		list = generateDefaultNotifications(userID)
+		list = make([]Notification, 0)
 		s.store[userID] = list
 	}
 
@@ -497,7 +241,7 @@ func (s *notificationService) MarkAllAsRead(userID string) error {
 
 	list, ok := s.store[userID]
 	if !ok {
-		list = generateDefaultNotifications(userID)
+		list = make([]Notification, 0)
 	}
 
 	for i := range list {
@@ -517,7 +261,7 @@ func (s *notificationService) DeleteNotification(userID, id string) error {
 
 	list, ok := s.store[userID]
 	if !ok {
-		list = generateDefaultNotifications(userID)
+		list = make([]Notification, 0)
 	}
 
 	// Cek apakah notifikasi bertipe keamanan / log login
@@ -744,7 +488,7 @@ func (s *notificationService) GetAllNotificationsAdmin(limit, offset int) ([]Not
 	respBytes, err := s.sbClient.GetDB("notifications", queryParams, "")
 	if err == nil {
 		var notifs []Notification
-		if err := json.Unmarshal(respBytes, &notifs); err == nil && len(notifs) > 0 {
+		if err := json.Unmarshal(respBytes, &notifs); err == nil {
 			return notifs, len(notifs), nil
 		}
 	}
@@ -759,7 +503,7 @@ func (s *notificationService) GetAllNotificationsAdmin(limit, offset int) ([]Not
 	}
 
 	if len(all) == 0 {
-		all = generateDefaultNotifications("admin-preview")
+		all = make([]Notification, 0)
 	}
 
 	if len(all) > limit {
