@@ -345,6 +345,11 @@ func mapWalletTrxToOrder(trx *wallet.WalletTransaction) *Order {
 		}
 	}
 
+	if strings.ToUpper(trx.Category) == "REFUND" || strings.HasPrefix(strings.ToUpper(trx.Title), "REFUND") {
+		// Refund adalah mutasi saldo pengembalian dana, bukan transaksi pesanan baru
+		return nil
+	}
+
 	prodName := strings.TrimPrefix(trx.Title, "Pembelian ")
 
 	target := "-"

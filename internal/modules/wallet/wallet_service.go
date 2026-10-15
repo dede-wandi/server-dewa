@@ -687,6 +687,8 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 
 		refundAmount = origTrx.Amount
 		origTitle = origTrx.Title
+		origTrx.Status = "REFUNDED"
+		s.repo.AddTransaction(origTrx)
 	} else if refundAmount <= 0 {
 		return nil, nil, fmt.Errorf("Transaksi '%s' tidak ditemukan di buku besar dan nominal refund tidak diisi.", req.TransactionCode)
 	}
