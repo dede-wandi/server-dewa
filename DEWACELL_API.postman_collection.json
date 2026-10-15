@@ -1047,6 +1047,185 @@
                         }
                     ],
                     "description": "Pusat artikel edukasi, blog bisnis, dan panduan fitur aplikasi untuk mitra DewaCell."
+                },
+                {
+                    "name": "Notifications",
+                    "item": [
+                        {
+                            "name": "Get Notifications (Max 20 with Unread Count)",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/notifications?limit=20&type=ALL&status=ALL",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "notifications"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "limit",
+                                            "value": "20",
+                                            "description": "Maksimal 20 notifikasi per pengguna"
+                                        },
+                                        {
+                                            "key": "type",
+                                            "value": "ALL",
+                                            "description": "Filter tipe: ALL, TRANSACTION, PAYMENT, PROMO, ANNOUNCEMENT, SECURITY"
+                                        },
+                                        {
+                                            "key": "status",
+                                            "value": "ALL",
+                                            "description": "Filter status: ALL, unread, read, Belum Dibaca, Sudah Dibaca"
+                                        }
+                                    ]
+                                },
+                                "description": "Mengambil daftar maksimal 20 notifikasi terbaru pengguna beserta total notifikasi belum dibaca (`total_unread`)."
+                            }
+                        },
+                        {
+                            "name": "Tandai Sudah Dibaca (Mark as Read)",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/notifications/{{notification_id}}/baca",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "notifications",
+                                        "{{notification_id}}",
+                                        "baca"
+                                    ]
+                                },
+                                "description": "Menandai 1 notifikasi tertentu menjadi status 'Sudah Dibaca'. Mendukung endpoint `/baca` atau `/read`."
+                            }
+                        },
+                        {
+                            "name": "Tandai Belum Dibaca (Mark as Unread)",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/notifications/{{notification_id}}/belum-baca",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "notifications",
+                                        "{{notification_id}}",
+                                        "belum-baca"
+                                    ]
+                                },
+                                "description": "Menandai 1 notifikasi tertentu menjadi status 'Belum Dibaca'. Mendukung endpoint `/belum-baca` atau `/unread`."
+                            }
+                        },
+                        {
+                            "name": "Tandai Semua Sudah Dibaca (Mark All as Read)",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/notifications/baca-semua",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "notifications",
+                                        "baca-semua"
+                                    ]
+                                },
+                                "description": "Menandai seluruh notifikasi pengguna menjadi status 'Sudah Dibaca'. Mendukung endpoint `/baca-semua` atau `/read-all`."
+                            }
+                        },
+                        {
+                            "name": "Hapus Notifikasi Tertentu (Delete Single)",
+                            "request": {
+                                "method": "DELETE",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/notifications/{{notification_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "notifications",
+                                        "{{notification_id}}"
+                                    ]
+                                },
+                                "description": "Menghapus 1 baris notifikasi tertentu dari daftar notifikasi pengguna."
+                            }
+                        },
+                        {
+                            "name": "Hapus Semua Notifikasi (Delete All)",
+                            "request": {
+                                "method": "DELETE",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/notifications",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "notifications"
+                                    ]
+                                },
+                                "description": "Menghapus seluruh daftar notifikasi milik pengguna."
+                            }
+                        }
+                    ],
+                    "description": "Layanan notifikasi pengguna meliputi transaksi, pembayaran, promo, pengumuman, dan keamanan akun. Maksimal 20 item per user dengan dukungan status bahasa Indonesia (Belum Dibaca/Sudah Dibaca)."
                 }
             ]
         },
@@ -2244,6 +2423,137 @@
                         }
                     ],
                     "description": "Pengelolaan penuh (CRUD) artikel, berita, dan panduan edukasi mitra oleh Admin & Superadmin."
+                },
+                {
+                    "name": "Notifications",
+                    "item": [
+                        {
+                            "name": "Admin Get All Notifications",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/notifications?limit=50&offset=0",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "notifications"
+                                    ]
+                                },
+                                "description": "Admin melihat riwayat seluruh notifikasi yang dikirimkan ke pengguna."
+                            }
+                        },
+                        {
+                            "name": "Admin Broadcast Announcement",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_access_token}}",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"title\": \"📢 Pemeliharaan Rutin Server Sukses\",\n  \"message\": \"Seluruh jalur transaksi PPOB kini telah beroperasi normal dengan kecepatan penuh.\",\n  \"type\": \"ANNOUNCEMENT\",\n  \"target_role\": \"all\",\n  \"action_url\": \"/(tabs)\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/notifications/broadcast",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "notifications",
+                                        "broadcast"
+                                    ]
+                                },
+                                "description": "Mengirimkan siaran pengumuman atau promo massal ke seluruh pengguna atau role tertentu."
+                            }
+                        },
+                        {
+                            "name": "Admin Send Notification to User",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_access_token}}",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"title\": \"Saldo Deposit Berhasil Diverifikasi\",\n  \"message\": \"Deposit Rp 200.000 telah disetujui oleh admin dan masuk ke akun Anda.\",\n  \"type\": \"PAYMENT\",\n  \"reference_id\": \"MANUAL-DEP-001\",\n  \"action_url\": \"/(tabs)/wallet\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/notifications/send",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "notifications",
+                                        "send"
+                                    ]
+                                },
+                                "description": "Mengirimkan notifikasi langsung ke 1 pengguna tertentu berdasarkan UUID user."
+                            }
+                        },
+                        {
+                            "name": "Admin Delete Notification",
+                            "request": {
+                                "method": "DELETE",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_access_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/notifications/{{notification_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "notifications",
+                                        "{{notification_id}}"
+                                    ]
+                                },
+                                "description": "Admin menghapus notifikasi dari database."
+                            }
+                        }
+                    ],
+                    "description": "Pengelolaan terpusat notifikasi & siaran pengumuman ke pengguna oleh Admin/Superadmin."
                 }
             ]
         }
