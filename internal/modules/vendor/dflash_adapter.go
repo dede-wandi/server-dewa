@@ -45,6 +45,17 @@ func NewDFlashAdapter(memberID, pin, password, baseURL string) *DFlashAdapter {
 		password = os.Getenv("DFLASH_PASSWORD")
 	}
 
+	// Kredensial resmi akun DFLASH jika env kosong
+	if memberID == "" {
+		memberID = "H2H02494"
+	}
+	if pin == "" {
+		pin = "112211"
+	}
+	if password == "" {
+		password = "DUNhil00@#"
+	}
+
 	var centers []string
 	if baseURL != "" {
 		centers = []string{strings.TrimRight(strings.TrimSpace(baseURL), "/")}
@@ -225,15 +236,41 @@ func (d *DFlashAdapter) OrderProduct(ctx context.Context, req *VendorOrderReques
 		}
 	}
 
+	rawStatus := fmt.Sprintf("%v", rawResp["status"])
+	rawStatusText := fmt.Sprintf("%v", rawResp["status_text"])
+	if rawStatusText == "<nil>" {
+		rawStatusText = fmt.Sprintf("%v", rawResp["message"])
+	}
+
+	status := d.normalizeStatusCode(rawStatus, rawStatusText)
+	sn := fmt.Sprintf("%v", rawResp["sn"])
+	if sn == "<nil>" {
+		sn = ""
+	}
+
+	msg := fmt.Sprintf("%v", rawResp["message"])
+	if msg == "<nil>" || msg == "" {
+		msg = fmt.Sprintf("%v", rawResp["keterangan"])
+		if msg == "<nil>" {
+			msg = rawStatusText
+		}
+	}
+
+	vendorTrxID := fmt.Sprintf("%v", rawResp["id"])
+	if vendorTrxID == "<nil>" || vendorTrxID == "" {
+		vendorTrxID = fmt.Sprintf("DFLASH-%s", req.RefID)
+	}
+
 	return &VendorOrderResponse{
 		VendorCode:   "DFLASH",
-		VendorTrxID:  fmt.Sprintf("DFLASH-%s", req.RefID),
+		VendorTrxID:  vendorTrxID,
 		RefID:        req.RefID,
 		BuyerSKUCode: req.BuyerSKUCode,
 		CustomerNo:   req.CustomerNo,
 		Price:        req.MaxPrice,
-		Status:       "PENDING",
-		Message:      fmt.Sprintf("Transaksi berhasil diteruskan ke API DFLASH via center: %s", usedCenter),
+		Status:       status,
+		SerialNumber: sn,
+		Message:      fmt.Sprintf("[%s] %s", usedCenter, msg),
 		RawResponse:  rawResp,
 		CreatedAt:    time.Now(),
 	}, nil

@@ -26,7 +26,7 @@ func GetGlobalManager() *VendorManager {
 		globalManager.RegisterAdapter(NewMockVendorAdapter("MANUAL"))
 		globalManager.RegisterAdapter(NewMockVendorAdapter("MOCK"))
 		globalManager.RegisterAdapter(NewMockVendorAdapter("DEFAULT"))
-		globalManager.RegisterAdapter(NewDFlashAdapter("", "", "", ""))
+		globalManager.RegisterAdapter(NewDFlashAdapter("H2H02494", "112211", "DUNhil00@#", ""))
 	})
 	return globalManager
 }

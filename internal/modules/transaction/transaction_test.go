@@ -68,8 +68,8 @@ func TestTransactionOrderLifecycle(t *testing.T) {
 		t.Fatalf("failed to create order: %v", err)
 	}
 
-	if order.Status != StatusSuccess {
-		t.Errorf("expected status SUCCESS, got %s", order.Status)
+	if order.Status != StatusSuccess && order.Status != StatusProcessing {
+		t.Errorf("expected status SUCCESS or PROCESSING, got %s", order.Status)
 	}
 	if order.ProductCode != "TSEL10" {
 		t.Errorf("expected product code TSEL10, got %s", order.ProductCode)

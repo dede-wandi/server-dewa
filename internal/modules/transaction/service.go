@@ -1,13 +1,16 @@
 package transaction
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/modules/product"
+	"github.com/dede-wandi/server-dewa/internal/modules/vendor"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
@@ -102,39 +105,75 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		CreatedAt:       now,
 	}
 
-	// 5. Eksekusi Pengiriman ke Provider / Switching PPOB
-	// Jika nomor tujuan mengandung kata "gagal" atau "error" -> Uji skenario auto-refund otomatis
-	if strings.Contains(strings.ToLower(target), "gagal") || strings.Contains(strings.ToLower(target), "error") {
-		order.Status = StatusFailed
-		order.ErrorMessage = "Gagal dari provider: Nomor tujuan tidak aktif atau gangguan jaringan provider"
+	// 5. Eksekusi Pengiriman ke Provider / Switching PPOB (DFLASH / Vendor Resmi)
+	vMgr := vendor.GetGlobalManager()
+	vendorCode := strings.ToUpper(strings.TrimSpace(prod.VendorCode))
+	if vendorCode == "" || vendorCode == "MANUAL" {
+		vendorCode = "DFLASH" // Defaultkan otomatis ke server vendor DFLASH
+	}
 
-		// AUTO-REFUND: Otomatis kembalikan uang ke saldo pengguna secara aman
+	sku := strings.TrimSpace(prod.BuyerSKUCode)
+	if sku == "" {
+		sku = strings.TrimSpace(prod.Code)
+	}
+
+	vReq := &vendor.VendorOrderRequest{
+		OrderID:      order.ID,
+		VendorCode:   vendorCode,
+		BuyerSKUCode: sku,
+		CustomerNo:   target,
+		RefID:        orderCode,
+		MaxPrice:     prod.CostPrice,
+		Testing:      false,
+	}
+
+	log.Printf("🚀 [VENDOR DISPATCH] Meneruskan pesanan %s ke vendor %s (SKU=%s, Tujuan=%s)...", orderCode, vendorCode, sku, target)
+	vResp, err := vMgr.ProcessOrder(context.Background(), vReq)
+	if err != nil {
+		log.Printf("❌ [VENDOR FAILED] Transaksi %s gagal diteruskan ke vendor %s: %v", orderCode, vendorCode, err)
+		order.Status = StatusFailed
+		order.ErrorMessage = fmt.Sprintf("Gagal dari provider %s: %v", vendorCode, err)
+
+		// Auto-refund ke saldo dompet jika vendor menolak / gagal
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
-			Reason:          fmt.Sprintf("Auto-refund otomatis atas kegagalan order %s (%s)", orderCode, prod.Name),
+			Reason:          fmt.Sprintf("Auto-refund otomatis atas kegagalan order %s (%s): %v", orderCode, prod.Name, err),
 		}
 		s.walletService.Refund(user, token, refundReq)
 		order.Status = StatusRefunded
-
 		s.repo.CreateOrder(order)
-		return order, fmt.Errorf("Transaksi gagal diproses provider. Saldo Anda sebesar Rp %s telah otomatis dikembalikan (Auto-Refund)!", wallet.FormatRupiah(int64(prod.Price)))
+		return order, fmt.Errorf("Transaksi gagal diproses oleh server vendor %s: %v. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", vendorCode, err)
 	}
 
-	// Skenario Sukses: Generate SN / Token Resmi
-	var sn string
-	if prod.Category == product.CategoryPLN {
-		// Generate 20-digit Stroom Token PLN
-		sn = fmt.Sprintf("%04d-%04d-%04d-%04d-%04d",
-			rand.Intn(9000)+1000, rand.Intn(9000)+1000, rand.Intn(9000)+1000, rand.Intn(9000)+1000, rand.Intn(9000)+1000)
+	log.Printf("📥 [VENDOR RESPONSE] Vendor=%s, Status=%s, SN=%s, Msg=%s", vendorCode, vResp.Status, vResp.SerialNumber, vResp.Message)
+
+	if vResp.Status == "FAILED" {
+		order.Status = StatusFailed
+		order.ErrorMessage = vResp.Message
+
+		// Auto-refund otomatis jika vendor menyatakan gagal
+		refundReq := wallet.RefundRequest{
+			TransactionCode: wTrx.TransactionCode,
+			Reason:          fmt.Sprintf("Auto-refund atas penolakan vendor %s: %s", vendorCode, vResp.Message),
+		}
+		s.walletService.Refund(user, token, refundReq)
+		order.Status = StatusRefunded
+		s.repo.CreateOrder(order)
+		return order, fmt.Errorf("Transaksi ditolak oleh server vendor %s: %s. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", vendorCode, vResp.Message)
+	}
+
+	if vResp.Status == "SUCCESS" {
+		order.Status = StatusSuccess
+		order.SerialNumber = vResp.SerialNumber
+		completedAt := time.Now()
+		order.CompletedAt = &completedAt
 	} else {
-		// Generate Serial Number Pulsa / Data / E-Money
-		sn = fmt.Sprintf("%s%010d", time.Now().Format("2006010215"), rand.Int63n(9000000000)+1000000000)
+		// PENDING / PROCESSING (Menunggu Serial Number dari switching atau webhook)
+		order.Status = StatusProcessing
+		if vResp.SerialNumber != "" {
+			order.SerialNumber = vResp.SerialNumber
+		}
 	}
-
-	order.Status = StatusSuccess
-	order.SerialNumber = sn
-	completedAt := time.Now()
-	order.CompletedAt = &completedAt
 
 	s.repo.CreateOrder(order)
 	return order, nil
