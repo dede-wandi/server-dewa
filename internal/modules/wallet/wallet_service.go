@@ -203,6 +203,66 @@ func (s *walletService) GetHistory(userID string) []*WalletTransaction {
 		}
 	}
 
+	// Kumpulkan semua reference ID dari transaksi refund untuk menandai debit yang di-refund
+	refundedRefs := make(map[string]string)
+	for _, t := range combined {
+		if t != nil && (strings.ToUpper(t.Category) == "REFUND" || strings.HasPrefix(strings.ToUpper(t.Title), "REFUND")) {
+			ref := strings.ToUpper(strings.TrimSpace(t.ReferenceID))
+			reason := t.AdminNotes
+			if reason == "" {
+				reason = t.Description
+			}
+			if ref != "" {
+				refundedRefs[ref] = reason
+				digits := strings.Map(func(r rune) rune {
+					if r >= '0' && r <= '9' {
+						return r
+					}
+					return -1
+				}, ref)
+				if digits != "" {
+					refundedRefs[digits] = reason
+				}
+			}
+		}
+	}
+
+	if len(refundedRefs) > 0 {
+		for _, t := range combined {
+			if t != nil && t.Type == TypeDebit {
+				code := strings.ToUpper(strings.TrimSpace(t.TransactionCode))
+				id := strings.ToUpper(strings.TrimSpace(t.ID))
+				ref := strings.ToUpper(strings.TrimSpace(t.ReferenceID))
+				cleanCode := strings.Map(func(r rune) rune {
+					if r >= '0' && r <= '9' {
+						return r
+					}
+					return -1
+				}, code)
+
+				reason := ""
+				if r, ok := refundedRefs[code]; ok {
+					reason = r
+				} else if r, ok := refundedRefs[id]; ok {
+					reason = r
+				} else if r, ok := refundedRefs[ref]; ok {
+					reason = r
+				} else if cleanCode != "" {
+					if r, ok := refundedRefs[cleanCode]; ok {
+						reason = r
+					}
+				}
+
+				if reason != "" {
+					t.Status = "REFUNDED"
+					if t.AdminNotes == "" {
+						t.AdminNotes = reason
+					}
+				}
+			}
+		}
+	}
+
 	return deduplicateTransactions(combined)
 }
 
