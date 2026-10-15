@@ -288,7 +288,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				Type:        string(notification.TypeSecurity),
 				IsDeletable: &isDeletable,
 				ReferenceID: refID,
-				ActionURL:   "/(tabs)/settings?action=change_pin",
+				ActionURL:   "/pin",
 			})
 		}
 	}(authResp.User.ID, cleanEmail, req, r.UserAgent(), r.RemoteAddr, r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"), r.Header.Get("X-Device-ID"), r.Header.Get("X-Device-Name"), r.Header.Get("X-Device-OS"), r.Header.Get("X-Device-Location"))
