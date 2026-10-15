@@ -43,12 +43,17 @@
     },
     {
       "key": "category_id",
-      "value": "c1000000-0000-0000-0000-000000000001",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sub_category_id",
+      "value": "",
       "type": "string"
     },
     {
       "key": "menu_id",
-      "value": "m1000000-0000-0000-0000-000000000001",
+      "value": "",
       "type": "string"
     }
   ],
@@ -2646,7 +2651,7 @@
           "name": "Notifications",
           "item": [
             {
-              "name": "Admin Get All Notifications",
+              "name": "Get All Notifications",
               "request": {
                 "method": "GET",
                 "header": [
@@ -2682,7 +2687,7 @@
               }
             },
             {
-              "name": "Admin Broadcast Announcement",
+              "name": "Broadcast Announcement",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2718,7 +2723,7 @@
               }
             },
             {
-              "name": "Admin Send Notification to User",
+              "name": "Send Notification to User",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2754,7 +2759,7 @@
               }
             },
             {
-              "name": "Admin Delete Notification",
+              "name": "Delete Notification",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -2787,7 +2792,7 @@
           "name": "Payment Channels (Multi-Vendor)",
           "item": [
             {
-              "name": "Admin Get All Payment Channels",
+              "name": "Get All Payment Channels",
               "request": {
                 "method": "GET",
                 "header": [
@@ -2813,7 +2818,7 @@
               }
             },
             {
-              "name": "Admin Create Payment Channel",
+              "name": "Create Payment Channel",
               "request": {
                 "method": "POST",
                 "header": [
@@ -2848,7 +2853,7 @@
               }
             },
             {
-              "name": "Admin Update Payment Channel",
+              "name": "Update Payment Channel",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -2884,7 +2889,7 @@
               }
             },
             {
-              "name": "Admin Delete Payment Channel",
+              "name": "Delete Payment Channel",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -2917,7 +2922,7 @@
           "name": "Manage App Menus",
           "item": [
             {
-              "name": "Admin Get All Menus",
+              "name": "Get All Menus",
               "request": {
                 "method": "GET",
                 "header": [
@@ -2939,11 +2944,27 @@
                     "menus"
                   ]
                 },
-                "description": "Admin mengambil semua menu layanan aplikasi (aktif maupun non-aktif)."
+                "description": "Mengambil semua menu layanan aplikasi (aktif maupun non-aktif)."
               }
             },
             {
-              "name": "Admin Create Menu",
+              "name": "Create Menu",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.data && jsonData.data.id) {",
+                      "    pm.collectionVariables.set('menu_id', jsonData.data.id);",
+                      "    pm.environment.set('menu_id', jsonData.data.id);",
+                      "    console.log('📌 menu_id otomatis tersimpan:', jsonData.data.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
               "request": {
                 "method": "POST",
                 "header": [
@@ -2960,7 +2981,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"code\": \"menu_paket_sms\",\n  \"name\": \"Paket SMS\",\n  \"subtitle\": \"Nelpon & SMS murah sepuasnya\",\n  \"category_id\": \"c1000000-0000-0000-0000-000000000001\",\n  \"action_type\": \"CATEGORY\",\n  \"target_url\": \"/service/sms\",\n  \"icon_type\": \"IONICONS\",\n  \"icon_name\": \"chatbox-ellipses-outline\",\n  \"bg_color\": \"#FEF2F2\",\n  \"icon_color\": \"#DC2626\",\n  \"badge\": \"HEMAT\",\n  \"badge_color\": \"#DC2626\",\n  \"placement\": \"HOME_GRID\",\n  \"sort_order\": 9,\n  \"is_active\": true,\n  \"is_coming_soon\": false\n}"
+                  "raw": "{\n  \"code\": \"menu_pulsa\",\n  \"name\": \"Pulsa\",\n  \"subtitle\": \"Isi ulang pulsa murah\",\n  \"category_id\": \"{{category_id}}\",\n  \"action_type\": \"CATEGORY\",\n  \"target_url\": \"/service/pulsa\",\n  \"icon_type\": \"IONICONS\",\n  \"icon_name\": \"phone-portrait-outline\",\n  \"bg_color\": \"#EFF6FF\",\n  \"icon_color\": \"#2563EB\",\n  \"badge\": \"PROMO\",\n  \"badge_color\": \"#EF4444\",\n  \"placement\": \"HOME_GRID\",\n  \"sort_order\": 1,\n  \"is_active\": true,\n  \"is_coming_soon\": false\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/menus",
@@ -2974,11 +2995,11 @@
                     "menus"
                   ]
                 },
-                "description": "Admin menambahkan menu layanan baru. Admin bisa mengarahkan menu ke kategori tertentu (action_type: CATEGORY) atau rute aplikasi (action_type: ROUTE)."
+                "description": "Menambahkan menu layanan baru. Admin bisa mengarahkan menu ke kategori tertentu (action_type: CATEGORY) atau rute aplikasi internal (action_type: ROUTE)."
               }
             },
             {
-              "name": "Admin Get Menu Detail",
+              "name": "Get Menu Detail",
               "request": {
                 "method": "GET",
                 "header": [
@@ -3001,11 +3022,11 @@
                     "{{menu_id}}"
                   ]
                 },
-                "description": "Admin melihat detail menu layanan beserta kategori tertaut."
+                "description": "Melihat detail menu layanan beserta kategori tertaut."
               }
             },
             {
-              "name": "Admin Update Menu",
+              "name": "Update Menu",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -3022,7 +3043,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Paket SMS & Nelpon\",\n  \"badge\": \"PROMO\",\n  \"sort_order\": 8,\n  \"is_active\": true\n}"
+                  "raw": "{\n  \"name\": \"Pulsa Semua Operator\",\n  \"badge\": \"HEMAT\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/menus/{{menu_id}}",
@@ -3037,11 +3058,11 @@
                     "{{menu_id}}"
                   ]
                 },
-                "description": "Admin mengupdate data menu layanan (target_url, category_id, icon, warna, badge, urutan, status aktif)."
+                "description": "Mengupdate data menu layanan (target_url, category_id, icon, warna, badge, urutan, status aktif)."
               }
             },
             {
-              "name": "Admin Delete Menu",
+              "name": "Delete Menu",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -3064,17 +3085,17 @@
                     "{{menu_id}}"
                   ]
                 },
-                "description": "Admin menghapus menu layanan dari aplikasi pengguna."
+                "description": "Menghapus menu layanan dari aplikasi pengguna."
               }
             }
           ],
-          "description": "CRUD Pengelolaan Menu Layanan Pengguna: Admin bisa membuat menu baru, mengarahkan ke kategori spesifik, mengganti ikon & badge secara dinamis."
+          "description": "CRUD Pengelolaan Menu Layanan Pengguna: Membuat menu baru, mengarahkan ke kategori spesifik, mengganti ikon & badge secara dinamis."
         },
         {
           "name": "Manage App Categories",
           "item": [
             {
-              "name": "Admin Get All Categories (Tree Mode)",
+              "name": "Get All Categories (Tree Mode)",
               "request": {
                 "method": "GET",
                 "header": [
@@ -3102,11 +3123,27 @@
                     }
                   ]
                 },
-                "description": "Admin mengambil struktur seluruh kategori dalam bentuk pohon (Tree) bercabang (Kategori -> Sub-kategori -> Sub-sub kategori)."
+                "description": "Mengambil struktur seluruh kategori dalam bentuk pohon (Tree) bercabang (Kategori -> Sub-kategori -> Sub-sub kategori)."
               }
             },
             {
-              "name": "Admin Create Category (Bercabang)",
+              "name": "Create Category (Utama / Level 1 Tanpa Parent)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.data && jsonData.data.id) {",
+                      "    pm.collectionVariables.set('category_id', jsonData.data.id);",
+                      "    pm.environment.set('category_id', jsonData.data.id);",
+                      "    console.log('📌 category_id (Level 1) tersimpan:', jsonData.data.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
               "request": {
                 "method": "POST",
                 "header": [
@@ -3123,7 +3160,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"parent_id\": \"c2000000-0000-0000-0000-000000000001\",\n  \"name\": \"Paket Roaming Internasional\",\n  \"code\": \"sub3_tsel_roaming\",\n  \"slug\": \"paket-roaming-internasional-telkomsel\",\n  \"description\": \"Paket internet dan nelpon haji, umroh, dan luar negeri\",\n  \"icon\": \"airplane-outline\",\n  \"badge\": \"HOT\",\n  \"level\": 3,\n  \"sort_order\": 5,\n  \"is_active\": true\n}"
+                  "raw": "{\n  \"name\": \"Pulsa & Paket Data\",\n  \"code\": \"cat_pulsa_data\",\n  \"slug\": \"pulsa-dan-paket-data\",\n  \"description\": \"Layanan pulsa reguler, transfer pulsa, dan paket kuota internet\",\n  \"icon\": \"phone-portrait-outline\",\n  \"badge\": \"PROMO\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/categories",
@@ -3137,11 +3174,97 @@
                     "categories"
                   ]
                 },
-                "description": "Admin membuat kategori baru. Jika parent_id diisi ID kategori level 1 maka menjadi sub-kategori (level 2). Jika parent_id diisi ID level 2 maka menjadi sub-sub-kategori (level 3)."
+                "description": "Membuat Kategori Utama (Level 1 / Root) tanpa parent_id. ID kategori yang terbentuk otomatis tersimpan di variable {{category_id}}."
               }
             },
             {
-              "name": "Admin Get Category Detail",
+              "name": "Create Sub-Category (Level 2 Bercabang ke Parent)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.data && jsonData.data.id) {",
+                      "    pm.collectionVariables.set('sub_category_id', jsonData.data.id);",
+                      "    pm.environment.set('sub_category_id', jsonData.data.id);",
+                      "    console.log('📌 sub_category_id (Level 2) tersimpan:', jsonData.data.id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"parent_id\": \"{{category_id}}\",\n  \"name\": \"Telkomsel\",\n  \"code\": \"sub_tsel\",\n  \"slug\": \"telkomsel\",\n  \"description\": \"Produk pulsa dan kuota Telkomsel\",\n  \"icon\": \"phone-portrait\",\n  \"badge\": \"TERLARIS\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/categories",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "categories"
+                  ]
+                },
+                "description": "Membuat Sub-Kategori (Level 2) di bawah Kategori Utama. Masukkan parent_id dengan ID kategori level 1. ID sub-kategori otomatis tersimpan di variable {{sub_category_id}}."
+              }
+            },
+            {
+              "name": "Create Sub-Sub-Category (Level 3 Di dalam Sub-Kategori)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"parent_id\": \"{{sub_category_id}}\",\n  \"name\": \"Pulsa Reguler Telkomsel\",\n  \"code\": \"sub3_tsel_pulsa\",\n  \"slug\": \"pulsa-reguler-telkomsel\",\n  \"description\": \"Pulsa reguler menambah masa aktif\",\n  \"icon\": \"phone-portrait\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/categories",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "categories"
+                  ]
+                },
+                "description": "Membuat Sub-Sub-Kategori (Level 3) bercabang di dalam Sub-Kategori. Masukkan parent_id dengan ID sub-kategori (Level 2)."
+              }
+            },
+            {
+              "name": "Get Category Detail",
               "request": {
                 "method": "GET",
                 "header": [
@@ -3164,11 +3287,11 @@
                     "{{category_id}}"
                   ]
                 },
-                "description": "Admin melihat detail kategori beserta anak cabangnya (children)."
+                "description": "Melihat detail kategori beserta anak cabangnya (children)."
               }
             },
             {
-              "name": "Admin Update Category",
+              "name": "Update Category",
               "request": {
                 "method": "PUT",
                 "header": [
@@ -3185,7 +3308,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Paket Roaming Haji & Umroh\",\n  \"badge\": \"HEMAT\",\n  \"sort_order\": 1\n}"
+                  "raw": "{\n  \"name\": \"Pulsa & Data Super Hemat\",\n  \"badge\": \"HEMAT\",\n  \"sort_order\": 1\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/categories/{{category_id}}",
@@ -3200,11 +3323,11 @@
                     "{{category_id}}"
                   ]
                 },
-                "description": "Admin memperbarui data kategori/sub-kategori."
+                "description": "Memperbarui data kategori/sub-kategori."
               }
             },
             {
-              "name": "Admin Delete Category",
+              "name": "Delete Category",
               "request": {
                 "method": "DELETE",
                 "header": [
@@ -3227,7 +3350,7 @@
                     "{{category_id}}"
                   ]
                 },
-                "description": "Admin menghapus kategori. Menghapus kategori induk otomatis menghapus seluruh sub-kategori di bawahnya (cascade)."
+                "description": "Menghapus kategori. Menghapus kategori induk otomatis menghapus seluruh sub-kategori di bawahnya (cascade)."
               }
             }
           ],
