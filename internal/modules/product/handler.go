@@ -44,7 +44,6 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
 	r.Get("/", h.ListProducts)
-	r.Get("", h.ListProducts)
 	r.Get("/categories", h.ListCategories)
 	r.Get("/brands", h.ListBrands)
 	r.Get("/{code}", h.GetProductDetail)
@@ -53,7 +52,6 @@ func (h *Handler) Routes() chi.Router {
 	r.Group(func(adminOnly chi.Router) {
 		adminOnly.Use(middleware.RequireRoles("admin", "superadmin"))
 		adminOnly.Post("/", h.CreateProduct)
-		adminOnly.Post("", h.CreateProduct)
 		adminOnly.Put("/{id}", h.UpdateProduct)
 		adminOnly.Delete("/{id}", h.DeleteProduct)
 		adminOnly.Post("/sync", h.SyncProducts)
@@ -66,10 +64,8 @@ func (h *Handler) Routes() chi.Router {
 func (h *Handler) AdminRoutes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/", h.ListProducts)
-	r.Get("", h.ListProducts)
 	r.Get("/{code}", h.GetProductDetail)
 	r.Post("/", h.CreateProduct)
-	r.Post("", h.CreateProduct)
 	r.Put("/{id}", h.UpdateProduct)
 	r.Delete("/{id}", h.DeleteProduct)
 	r.Post("/sync", h.SyncProducts)
