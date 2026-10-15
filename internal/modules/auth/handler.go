@@ -275,6 +275,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			IsDeletable: &isDeletable,
 			ReferenceID: refID,
 			ActionURL:   "/account/pin",
+			AuthToken:   authResp.AccessToken,
 		})
 		if notifErr != nil {
 			log.Printf("[AuthHandler] Warning: Gagal membuat notifikasi login: %v", notifErr)

@@ -44,6 +44,7 @@ type CreateNotificationRequest struct {
 	IsDeletable *bool  `json:"is_deletable,omitempty"`
 	ReferenceID string `json:"reference_id,omitempty"`
 	ActionURL   string `json:"action_url,omitempty"`
+	AuthToken   string `json:"auth_token,omitempty"`
 }
 
 // BroadcastNotificationRequest payload for admin broadcast announcement

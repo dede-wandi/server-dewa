@@ -403,13 +403,18 @@ func (s *notificationService) CreateNotification(req CreateNotificationRequest) 
 	s.mu.Unlock()
 
 	// 2. Persist ke DB PostgREST secara background agar tidak memblokir respon
-	go func(n Notification) {
-		if _, err := s.sbClient.PostDB("notifications", n, "", ""); err != nil {
-			log.Printf("[NotificationService] Note: PostDB notifications error (%v), stored safely in-memory", err)
+	go func(n Notification, token string) {
+		if _, err := s.sbClient.PostDB("notifications", n, "", token); err != nil {
+			// Coba lagi dengan anon key jika token gagal
+			if _, err2 := s.sbClient.PostDB("notifications", n, "", ""); err2 != nil {
+				log.Printf("[NotificationService] Note: PostDB notifications error (%v), stored safely in-memory", err2)
+			} else {
+				log.Printf("[NotificationService] ✅ Successfully persisted notification to DB via anon (%s)", n.ID)
+			}
 		} else {
 			log.Printf("[NotificationService] ✅ Successfully persisted notification to DB (%s)", n.ID)
 		}
-	}(notif)
+	}(notif, req.AuthToken)
 
 	return &notif, nil
 }
