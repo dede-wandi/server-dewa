@@ -148,11 +148,15 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		order.ErrorMessage = sanitizeErrorMessage(err.Error())
 
 		// Auto-refund ke saldo dompet jika provider menolak / gagal
+		refundReason := order.ErrorMessage
+		if refundReason == "" {
+			refundReason = "Pesanan ditolak server provider"
+		}
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
 			Amount:          prod.Price,
 			TargetUserID:    user.ID,
-			Reason:          fmt.Sprintf("Auto-refund otomatis atas kegagalan order %s (%s)", orderCode, prod.Name),
+			Reason:          refundReason,
 		}
 		refTrx, _, errRefund := s.walletService.Refund(user, token, refundReq)
 		if errRefund != nil {
@@ -162,7 +166,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		}
 		order.Status = StatusRefunded
 		s.repo.CreateOrder(order)
-		return order, fmt.Errorf("%s. Saldo Anda telah otomatis dikembalikan (Auto-Refund)!", order.ErrorMessage)
+		return order, fmt.Errorf("%s. Saldo Anda telah otomatis dikembalikan", order.ErrorMessage)
 	}
 
 	log.Printf("📥 [RESPONSE] Status=%s, SN=%s, Msg=%s", vResp.Status, vResp.SerialNumber, vResp.Message)
@@ -172,11 +176,15 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		order.ErrorMessage = sanitizeErrorMessage(vResp.Message)
 
 		// Auto-refund otomatis jika provider menyatakan gagal
+		refundReason := order.ErrorMessage
+		if refundReason == "" {
+			refundReason = "Pesanan ditolak server provider"
+		}
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
 			Amount:          prod.Price,
 			TargetUserID:    user.ID,
-			Reason:          fmt.Sprintf("Auto-refund atas penolakan order %s (%s)", orderCode, prod.Name),
+			Reason:          refundReason,
 		}
 		refTrx, _, errRefund := s.walletService.Refund(user, token, refundReq)
 		if errRefund != nil {

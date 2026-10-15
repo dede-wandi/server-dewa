@@ -254,3 +254,8 @@ WHERE title ~* '^Refund Dana:';
 UPDATE public.app_wallet_transactions
 SET description = REGEXP_REPLACE(REGEXP_REPLACE(description, '^Tujuan:\s*', ''), '\s*\([^)]*\)$', '')
 WHERE description ~* '^Tujuan:\s*';
+
+-- Bersihkan deskripsi refund lama yang berisi kalimat panjang "Pengembalian saldo atas..."
+UPDATE public.app_wallet_transactions
+SET description = 'Pesanan ditolak server provider'
+WHERE description ~* '^Pengembalian (saldo|dana) atas';
