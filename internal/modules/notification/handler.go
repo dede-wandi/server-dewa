@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -68,29 +69,85 @@ func (h *Handler) AdminRoutes() chi.Router {
 	return r
 }
 
-// getUserID helper to extract authenticated user ID or demo ID
+// parseJWTSub extracts the subject (user UUID) directly from a JWT access token without network latency
+func parseJWTSub(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payloadSegment := parts[1]
+	switch len(payloadSegment) % 4 {
+	case 2:
+		payloadSegment += "=="
+	case 3:
+		payloadSegment += "="
+	}
+	bytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		bytes, err = base64.URLEncoding.DecodeString(payloadSegment)
+		if err != nil {
+			bytes, err = base64.StdEncoding.DecodeString(payloadSegment)
+			if err != nil {
+				return ""
+			}
+		}
+	}
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	if err := json.Unmarshal(bytes, &claims); err == nil && claims.Sub != "" {
+		return claims.Sub
+	}
+	return ""
+}
+
+// getUserID helper to extract authenticated user ID with multiple fallback layers
 func (h *Handler) getUserID(r *http.Request) string {
+	// 1. Context user (from middleware if present)
 	user := middleware.GetUserFromContext(r.Context())
 	if user != nil && user.ID != "" {
 		return user.ID
 	}
 
+	// 2. Explicit header X-User-ID (passed by mobile app or frontend)
+	if uid := strings.TrimSpace(r.Header.Get("X-User-ID")); uid != "" {
+		return uid
+	}
+
+	// 3. Explicit query parameter user_id
+	if uid := strings.TrimSpace(r.URL.Query().Get("user_id")); uid != "" {
+		return uid
+	}
+
+	// 4. Extract subject claim directly from Bearer JWT
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
 		token := strings.TrimSpace(authHeader[7:])
+		if sub := parseJWTSub(token); sub != "" {
+			return sub
+		}
 		if token != "" && h.sbClient != nil {
-			if u, err := h.sbClient.GetUser(token); err == nil && u != nil {
+			if u, err := h.sbClient.GetUser(token); err == nil && u != nil && u.ID != "" {
 				return u.ID
 			}
 		}
 	}
 
-	// Optional query/header fallback for dev testing
-	if uid := r.URL.Query().Get("user_id"); uid != "" {
-		return uid
+	// 5. Device ID isolation fallback so unauthenticated clients don't collide
+	if devID := strings.TrimSpace(r.Header.Get("X-Device-ID")); devID != "" {
+		return "device-" + devID
 	}
 
-	return "default-user"
+	// 6. Remote IP isolation fallback
+	remoteAddr := r.RemoteAddr
+	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
+		remoteAddr = remoteAddr[:idx]
+	}
+	if remoteAddr != "" && remoteAddr != "127.0.0.1" && remoteAddr != "::1" {
+		return "guest-" + remoteAddr
+	}
+
+	return "guest-user"
 }
 
 // GetNotifications returns user's notifications (maksimal 20 item)

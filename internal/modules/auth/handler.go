@@ -69,6 +69,7 @@ func (h *Handler) Routes() chi.Router {
 type LoginRequest struct {
 	Email      string `json:"email"`
 	Password   string `json:"password"`
+	DeviceID   string `json:"device_id,omitempty"`
 	DeviceName string `json:"device_name,omitempty"`
 	DeviceOS   string `json:"device_os,omitempty"`
 }
@@ -172,8 +173,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deteksi Device & IP untuk Notifikasi Keamanan Login Pengguna
-	go func(userUUID string, loginReq LoginRequest, userAgent string, remoteAddr string, xForwardedFor string, xRealIP string) {
+	// Deteksi Device & IP untuk Audit Log Database & Notifikasi Keamanan Pengguna
+	go func(userUUID string, userEmail string, loginReq LoginRequest, userAgent string, remoteAddr string, xForwardedFor string, xRealIP string, xDeviceID string, xDeviceName string, xDeviceOS string) {
 		// 1. Ekstrak IP Address
 		clientIP := strings.TrimSpace(xForwardedFor)
 		if clientIP != "" {
@@ -193,9 +194,24 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			clientIP = "Local / VPN"
 		}
 
-		// 2. Ekstrak Device & OS
+		// 2. Ekstrak Device ID, Name & OS
+		deviceID := strings.TrimSpace(loginReq.DeviceID)
+		if deviceID == "" {
+			deviceID = strings.TrimSpace(xDeviceID)
+		}
+		if deviceID == "" {
+			deviceID = "unknown-device"
+		}
+
 		deviceName := strings.TrimSpace(loginReq.DeviceName)
+		if deviceName == "" {
+			deviceName = strings.TrimSpace(xDeviceName)
+		}
+
 		deviceOS := strings.TrimSpace(loginReq.DeviceOS)
+		if deviceOS == "" {
+			deviceOS = strings.TrimSpace(xDeviceOS)
+		}
 
 		if deviceName == "" {
 			if strings.Contains(userAgent, "iPhone") {
@@ -231,10 +247,23 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		wib := time.FixedZone("WIB", 7*3600)
 		loginTimeStr := time.Now().In(wib).Format("02 Jan 2006, 15:04 WIB")
 
-		// 4. Catat notifikasi keamanan login (tidak dapat dihapus)
+		// 4. Catat ke tabel database public.user_login_logs
+		loginLogRecord := map[string]interface{}{
+			"user_id":     userUUID,
+			"email":       userEmail,
+			"device_id":   deviceID,
+			"device_name": deviceName,
+			"device_os":   deviceOS,
+			"ip_address":  clientIP,
+			"user_agent":  userAgent,
+			"created_at":  time.Now(),
+		}
+		_, _ = h.sb.PostDB("user_login_logs", loginLogRecord, "", "")
+
+		// 5. Catat notifikasi keamanan login (tidak dapat dihapus)
 		title := fmt.Sprintf("🛡️ Login Berhasil: %s", deviceName)
-		msg := fmt.Sprintf("Akun DewaCell Anda baru saja login dari perangkat %s (%s) pada %s (IP: %s). Catatan keamanan ini tidak dapat dihapus demi perlindungan akun Anda.",
-			deviceName, deviceOS, loginTimeStr, clientIP)
+		msg := fmt.Sprintf("Akun DewaCell Anda baru saja login dari perangkat %s (%s, ID: %s) pada %s (IP: %s). Catatan keamanan ini tidak dapat dihapus demi perlindungan akun Anda.",
+			deviceName, deviceOS, deviceID, loginTimeStr, clientIP)
 
 		isDeletable := false
 		refID := fmt.Sprintf("LOG-%s", time.Now().Format("20060102150405"))
@@ -249,7 +278,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				ReferenceID: refID,
 			})
 		}
-	}(authResp.User.ID, req, r.UserAgent(), r.RemoteAddr, r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"))
+	}(authResp.User.ID, cleanEmail, req, r.UserAgent(), r.RemoteAddr, r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"), r.Header.Get("X-Device-ID"), r.Header.Get("X-Device-Name"), r.Header.Get("X-Device-OS"))
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{

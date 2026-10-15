@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -35,15 +34,19 @@ type Service interface {
 }
 
 type notificationService struct {
-	sbClient *supabase.Client
-	mu       sync.RWMutex
-	store    map[string][]Notification // Fallback in-memory store keyed by userID
+	sbClient        *supabase.Client
+	mu              sync.RWMutex
+	store           map[string][]Notification // Fallback in-memory store keyed by userID
+	userInitialized map[string]bool           // Tracks if defaults were initialized once per user
+	broadcasts      []Notification            // Global broadcasts
 }
 
 func NewService(sbClient *supabase.Client) Service {
 	s := &notificationService{
-		sbClient: sbClient,
-		store:    make(map[string][]Notification),
+		sbClient:        sbClient,
+		store:           make(map[string][]Notification),
+		userInitialized: make(map[string]bool),
+		broadcasts:      make([]Notification, 0),
 	}
 	return s
 }
@@ -349,9 +352,29 @@ func (s *notificationService) GetUserNotifications(userID, filterType, filterSta
 	defer s.mu.Unlock()
 
 	userList, ok := s.store[userID]
-	if !ok || len(userList) == 0 {
+	if !s.userInitialized[userID] && !ok {
 		userList = generateDefaultNotifications(userID)
+		// Tambahkan broadcast global yang belum diterima user
+		for _, b := range s.broadcasts {
+			userNotif := Notification{
+				ID:          newUUID(),
+				UserID:      userID,
+				Title:       b.Title,
+				Message:     b.Message,
+				Type:        b.Type,
+				StatusBaca:  StatusBelumDibaca,
+				IsRead:      false,
+				IsDeletable: true,
+				ActionURL:   b.ActionURL,
+				CreatedAt:   b.CreatedAt,
+			}
+			userList = append([]Notification{userNotif}, userList...)
+		}
+		if len(userList) > 20 {
+			userList = userList[:20]
+		}
 		s.store[userID] = userList
+		s.userInitialized[userID] = true
 	}
 
 	// Filter in-memory
@@ -518,6 +541,7 @@ func (s *notificationService) DeleteNotification(userID, id string) error {
 		}
 	}
 	s.store[userID] = newList
+	s.userInitialized[userID] = true
 	return nil
 }
 
@@ -532,7 +556,7 @@ func (s *notificationService) DeleteAllNotifications(userID string) error {
 
 	list, ok := s.store[userID]
 	if !ok {
-		list = generateDefaultNotifications(userID)
+		list = []Notification{}
 	}
 
 	// Pertahankan seluruh notifikasi keamanan dan log login
@@ -543,10 +567,11 @@ func (s *notificationService) DeleteAllNotifications(userID string) error {
 		}
 	}
 	s.store[userID] = keptList
+	s.userInitialized[userID] = true
 	return nil
 }
 
-// CreateNotification creates a single notification
+// CreateNotification creates a single notification (or broadcasts if user_id is 'all')
 func (s *notificationService) CreateNotification(req CreateNotificationRequest) (*Notification, error) {
 	if req.Title == "" || req.Message == "" {
 		return nil, errors.New("judul (title) dan isi pesan (message) wajib diisi")
@@ -563,6 +588,32 @@ func (s *notificationService) CreateNotification(req CreateNotificationRequest) 
 	}
 	if req.IsDeletable != nil {
 		isDeletable = *req.IsDeletable
+	}
+
+	// Jika ditujukan untuk 'all', delegasikan ke BroadcastNotification agar setiap user punya salinan mandiri
+	if req.UserID == "all" || req.UserID == "" {
+		_, err := s.BroadcastNotification(BroadcastNotificationRequest{
+			Title:     req.Title,
+			Message:   req.Message,
+			Type:      req.Type,
+			ActionURL: req.ActionURL,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &Notification{
+			ID:          newUUID(),
+			UserID:      "all",
+			Title:       req.Title,
+			Message:     req.Message,
+			Type:        upperType,
+			StatusBaca:  StatusBelumDibaca,
+			IsRead:      false,
+			IsDeletable: isDeletable,
+			ReferenceID: req.ReferenceID,
+			ActionURL:   req.ActionURL,
+			CreatedAt:   time.Now(),
+		}, nil
 	}
 
 	notif := Notification{
@@ -592,11 +643,12 @@ func (s *notificationService) CreateNotification(req CreateNotificationRequest) 
 		list = list[:20] // Keep max 20
 	}
 	s.store[req.UserID] = list
+	s.userInitialized[req.UserID] = true
 
 	return &notif, nil
 }
 
-// BroadcastNotification sends notification to all users (Admin)
+// BroadcastNotification sends notification to all users with independent read & delete state per user
 func (s *notificationService) BroadcastNotification(req BroadcastNotificationRequest) (int, error) {
 	if req.Title == "" || req.Message == "" {
 		return 0, errors.New("judul dan pesan broadcast wajib diisi")
@@ -606,63 +658,79 @@ func (s *notificationService) BroadcastNotification(req BroadcastNotificationReq
 		req.Type = string(TypeAnnouncement)
 	}
 
-	// Fetch users from auth or admin
-	users, err := s.sbClient.AdminListUsers(1, 100)
-	sentCount := 0
+	upperType := strings.ToUpper(req.Type)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err == nil && len(users) > 0 {
-		for _, u := range users {
-			notif := Notification{
-				ID:         newUUID(),
-				UserID:     u.ID,
-				Title:      req.Title,
-				Message:    req.Message,
-				Type:       strings.ToUpper(req.Type),
-				StatusBaca: StatusBelumDibaca,
-				IsRead:     false,
-				ActionURL:  req.ActionURL,
-				CreatedAt:  time.Now(),
-			}
-			_, _ = s.sbClient.PostDB("notifications", notif, "", "")
-
-			list := s.store[u.ID]
-			list = append([]Notification{notif}, list...)
-			if len(list) > 20 {
-				list = list[:20]
-			}
-			s.store[u.ID] = list
-			sentCount++
-		}
-	} else {
-		// Broadcast to all active in-memory users
-		for uid, list := range s.store {
-			notif := Notification{
-				ID:         newUUID(),
-				UserID:     uid,
-				Title:      req.Title,
-				Message:    req.Message,
-				Type:       strings.ToUpper(req.Type),
-				StatusBaca: StatusBelumDibaca,
-				IsRead:     false,
-				ActionURL:  req.ActionURL,
-				CreatedAt:  time.Now(),
-			}
-			list = append([]Notification{notif}, list...)
-			if len(list) > 20 {
-				list = list[:20]
-			}
-			s.store[uid] = list
-			sentCount++
-		}
-		if sentCount == 0 {
-			sentCount = 1
-		}
+	// 1. Simpan template broadcast global untuk user yang baru mendaftar / baru buka aplikasi
+	bTemplate := Notification{
+		ID:          newUUID(),
+		Title:       req.Title,
+		Message:     req.Message,
+		Type:        upperType,
+		StatusBaca:  StatusBelumDibaca,
+		IsRead:      false,
+		IsDeletable: true,
+		ActionURL:   req.ActionURL,
+		CreatedAt:   time.Now(),
+	}
+	s.broadcasts = append([]Notification{bTemplate}, s.broadcasts...)
+	if len(s.broadcasts) > 20 {
+		s.broadcasts = s.broadcasts[:20]
 	}
 
-	log.Printf("📢 [NOTIFICATION SERVICE] Broadcast terkirim ke %d pengguna", sentCount)
+	sentCount := 0
+
+	// 2. Buat notifikasi mandiri untuk setiap user yang ada di memory (agar read/delete masing-masing)
+	for uid, list := range s.store {
+		userNotif := Notification{
+			ID:          newUUID(),
+			UserID:      uid,
+			Title:       req.Title,
+			Message:     req.Message,
+			Type:        upperType,
+			StatusBaca:  StatusBelumDibaca,
+			IsRead:      false,
+			IsDeletable: true,
+			ActionURL:   req.ActionURL,
+			CreatedAt:   time.Now(),
+		}
+		list = append([]Notification{userNotif}, list...)
+		if len(list) > 20 {
+			list = list[:20]
+		}
+		s.store[uid] = list
+		s.userInitialized[uid] = true
+		sentCount++
+	}
+
+	// 3. Simpan baris mandiri ke database Supabase untuk user terdaftar
+	go func(bReq BroadcastNotificationRequest) {
+		users, err := s.sbClient.AdminListUsers(1, 100)
+		if err == nil && len(users) > 0 {
+			for _, u := range users {
+				userNotif := Notification{
+					ID:          newUUID(),
+					UserID:      u.ID,
+					Title:       bReq.Title,
+					Message:     bReq.Message,
+					Type:        upperType,
+					StatusBaca:  StatusBelumDibaca,
+					IsRead:      false,
+					IsDeletable: true,
+					ActionURL:   bReq.ActionURL,
+					CreatedAt:   time.Now(),
+				}
+				_, _ = s.sbClient.PostDB("notifications", userNotif, "", "")
+			}
+		}
+	}(req)
+
+	if sentCount == 0 {
+		sentCount = 1
+	}
+
 	return sentCount, nil
 }
 
