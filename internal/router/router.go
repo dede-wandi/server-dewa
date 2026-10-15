@@ -12,6 +12,7 @@ import (
 	"github.com/dede-wandi/server-dewa/internal/modules/auth"
 	"github.com/dede-wandi/server-dewa/internal/modules/banner"
 	"github.com/dede-wandi/server-dewa/internal/modules/notification"
+	"github.com/dede-wandi/server-dewa/internal/modules/payment_channel"
 	"github.com/dede-wandi/server-dewa/internal/modules/product"
 	"github.com/dede-wandi/server-dewa/internal/modules/transaction"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
@@ -87,6 +88,7 @@ func New(cfg *config.Config) *chi.Mux {
 	bannerHandler := banner.NewHandler(sbClient)
 	articleHandler := article.NewHandler(sbClient)
 	notificationHandler := notification.NewHandler(sbClient)
+	paymentChannelHandler := payment_channel.NewHandler(sbClient)
 
 	r.Route("/api/v1", func(api chi.Router) {
 		// Auth endpoints (public login/register/refresh, protected /me)
@@ -106,6 +108,9 @@ func New(cfg *config.Config) *chi.Mux {
 		// User notifications (dengan bearer token atau demo fallback, limit max 20)
 		api.Mount("/notifications", notificationHandler.Routes())
 
+		// Dynamic payment channels & vendors (active & coming soon PG)
+		api.Mount("/payment-channels", paymentChannelHandler.PublicRoutes())
+
 		// DEDICATED SUPER ADMIN & ADMIN ENDPOINTS: Wajib login & role 'admin' / 'superadmin'
 		api.Route("/admin", func(adminRouter chi.Router) {
 			adminRouter.Use(middleware.RequireAuth(sbClient))
@@ -117,6 +122,7 @@ func New(cfg *config.Config) *chi.Mux {
 			adminRouter.Mount("/articles", articleHandler.AdminRoutes())
 			adminRouter.Mount("/news", articleHandler.AdminRoutes())
 			adminRouter.Mount("/notifications", notificationHandler.AdminRoutes())
+			adminRouter.Mount("/payment-channels", paymentChannelHandler.AdminRoutes())
 		})
 
 		// PROTECTED MICROSERVICES: Semua modul transaksi & dompet wajib melalui autentikasi login Supabase

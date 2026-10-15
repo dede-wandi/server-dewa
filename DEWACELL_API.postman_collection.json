@@ -555,7 +555,25 @@
                                 "description": "Membuat permohonan deposit saldo via channel fund_credit dengan status PENDING. Saldo masuk setelah diverifikasi/disetujui Admin."
                             }
                         },
-
+                        {
+                            "name": "Get Active Payment Channels",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/payment-channels",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "payment-channels"
+                                    ]
+                                },
+                                "description": "Mengambil seluruh channel pembayaran yang aktif & coming soon (Fund Credit, QRIS Duitku, QRIS DANA, VA Bank) secara dinamis dari database."
+                            }
+                        },
                         {
                             "name": "Pay",
                             "request": {
@@ -2434,7 +2452,7 @@
                                 "header": [
                                     {
                                         "key": "Authorization",
-                                        "value": "Bearer {{admin_access_token}}",
+                                        "value": "Bearer {{admin_token}}",
                                         "type": "text"
                                     }
                                 ],
@@ -2448,6 +2466,16 @@
                                         "v1",
                                         "admin",
                                         "notifications"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "limit",
+                                            "value": "50"
+                                        },
+                                        {
+                                            "key": "offset",
+                                            "value": "0"
+                                        }
                                     ]
                                 },
                                 "description": "Admin melihat riwayat seluruh notifikasi yang dikirimkan ke pengguna."
@@ -2460,7 +2488,7 @@
                                 "header": [
                                     {
                                         "key": "Authorization",
-                                        "value": "Bearer {{admin_access_token}}",
+                                        "value": "Bearer {{admin_token}}",
                                         "type": "text"
                                     },
                                     {
@@ -2496,7 +2524,7 @@
                                 "header": [
                                     {
                                         "key": "Authorization",
-                                        "value": "Bearer {{admin_access_token}}",
+                                        "value": "Bearer {{admin_token}}",
                                         "type": "text"
                                     },
                                     {
@@ -2532,7 +2560,7 @@
                                 "header": [
                                     {
                                         "key": "Authorization",
-                                        "value": "Bearer {{admin_access_token}}",
+                                        "value": "Bearer {{admin_token}}",
                                         "type": "text"
                                     }
                                 ],
@@ -2554,6 +2582,136 @@
                         }
                     ],
                     "description": "Pengelolaan terpusat notifikasi & siaran pengumuman ke pengguna oleh Admin/Superadmin."
+                },
+                {
+                    "name": "Payment Channels (Multi-Vendor)",
+                    "item": [
+                        {
+                            "name": "Admin Get All Payment Channels",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/payment-channels",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "payment-channels"
+                                    ]
+                                },
+                                "description": "Admin melihat semua channel pembayaran (Fund Credit, QRIS Duitku, QRIS DANA, VA Bank) termasuk status AKTIF, COMING_SOON, INACTIVE."
+                            }
+                        },
+                        {
+                            "name": "Admin Create Payment Channel",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_token}}",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"code\": \"qris_duitku\",\n  \"name\": \"QRIS Duitku\",\n  \"channel_type\": \"QRIS\",\n  \"vendor\": \"duitku\",\n  \"admin_fee\": 0,\n  \"admin_fee_percent\": 0.7,\n  \"min_amount\": 10000,\n  \"max_amount\": 5000000,\n  \"status\": \"COMING_SOON\",\n  \"is_pg\": true,\n  \"badge\": \"Coming Soon\",\n  \"instructions\": \"Scan QRIS otomatis Duitku menggunakan e-wallet atau m-banking.\",\n  \"sort_order\": 2\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/payment-channels",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "payment-channels"
+                                    ]
+                                },
+                                "description": "Admin menambahkan channel pembayaran baru dari database (QRIS Duitku, QRIS DANA, BCA VA, dll)."
+                            }
+                        },
+                        {
+                            "name": "Admin Update Payment Channel",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_token}}",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"status\": \"ACTIVE\",\n  \"badge\": \"AKTIF\",\n  \"instructions\": \"Payment gateway telah live dan dapat digunakan.\"\n}"
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/payment-channels/{{channel_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "payment-channels",
+                                        "{{channel_id}}"
+                                    ]
+                                },
+                                "description": "Admin mengubah status channel (misalnya mengubah dari COMING_SOON menjadi ACTIVE saat PG sudah siap)."
+                            }
+                        },
+                        {
+                            "name": "Admin Delete Payment Channel",
+                            "request": {
+                                "method": "DELETE",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{admin_token}}",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/payment-channels/{{channel_id}}",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "payment-channels",
+                                        "{{channel_id}}"
+                                    ]
+                                },
+                                "description": "Admin menghapus channel pembayaran."
+                            }
+                        }
+                    ],
+                    "description": "Pengelolaan channel pembayaran dinamis multi-vendor (Fund Credit, Duitku, DANA, Midtrans, dll)."
                 }
             ]
         }
