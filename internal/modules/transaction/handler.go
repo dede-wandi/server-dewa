@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -81,8 +82,11 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("🛒 [ORDER REQUEST] User=%s, ProductCode=%s, TargetAccount=%s", user.Email, req.ProductCode, req.TargetAccount)
+
 	order, err := h.service.CreateOrder(user, token, req)
 	if err != nil {
+		log.Printf("❌ [ORDER FAILED] ProductCode=%s, Target=%s, Error=%v", req.ProductCode, req.TargetAccount, err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "error",
@@ -91,6 +95,8 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	log.Printf("✅ [ORDER SUCCESS] Code=%s, Product=%s, Target=%s, Price=Rp %d, SN=%s", order.OrderCode, order.ProductName, order.TargetAccount, order.Price, order.SerialNumber)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
