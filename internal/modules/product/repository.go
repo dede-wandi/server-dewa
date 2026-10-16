@@ -199,16 +199,17 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 				if vendorCode == "" {
 					vendorCode = "MANUAL"
 				}
-				status := dp.Status
+				status := strings.ToUpper(strings.TrimSpace(dp.Status))
 				isActive := dp.IsActive
-				if !isActive || strings.EqualFold(status, "INACTIVE") {
+				if !isActive || status == "INACTIVE" {
 					status = "INACTIVE"
 					isActive = false
-				} else if status == "" {
+				} else if status == "GANGGUAN" {
+					status = "GANGGUAN"
+					isActive = true // Produk gangguan tetap tampil di katalog user
+				} else {
 					status = "ACTIVE"
 					isActive = true
-				} else {
-					isActive = strings.EqualFold(status, "ACTIVE")
 				}
 
 				p := &Product{

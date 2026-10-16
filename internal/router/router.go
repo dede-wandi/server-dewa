@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -95,6 +96,9 @@ func New(cfg *config.Config) *chi.Mux {
 	appCategoryHandler := app_category.NewHandler(sbClient)
 	appMenuHandler := app_menu.NewHandler(sbClient, appCategoryHandler.GetService())
 	callbackHandler := callback.NewHandler(sbClient)
+
+	// Background Auto-Cronjob: Sinkronisasi harga & status Gangguan DFLASH setiap 10 menit
+	productHandler.StartDFlashCron(context.Background(), 10*time.Minute)
 
 	// Enterprise Universal Webhook: e.g. /product-service/v2.0/payment/callback-product
 	r.Mount("/product-service/v2.0/payment", callbackHandler.ProductServiceRoutes())

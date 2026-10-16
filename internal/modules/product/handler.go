@@ -1,6 +1,7 @@
 package product
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -65,12 +66,18 @@ func (h *Handler) Routes() chi.Router {
 // AdminRoutes mounts dedicated administrative CRUD endpoints
 func (h *Handler) AdminRoutes() chi.Router {
 	r := chi.NewRouter()
+	// Static endpoints FIRST (must precede /{code} and /{id} wildcards)
+	r.Get("/cron", h.GetCronConfigAndLogs)
+	r.Post("/cron", h.UpdateCronConfig)
+	r.Put("/cron", h.UpdateCronConfig)
+	r.Post("/sync", h.SyncProducts)
+
+	// Collection and parameterized endpoints
 	r.Get("/", h.ListAdminProducts)
-	r.Get("/{code}", h.GetAdminProductDetail)
 	r.Post("/", h.CreateProduct)
+	r.Get("/{code}", h.GetAdminProductDetail)
 	r.Put("/{id}", h.UpdateProduct)
 	r.Delete("/{id}", h.DeleteProduct)
-	r.Post("/sync", h.SyncProducts)
 	return r
 }
 
@@ -194,7 +201,7 @@ func (h *Handler) ListBrands(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SyncProducts forces a cache sync from provider or database
+// SyncProducts forces a cache sync and live report sync from DFLASH
 func (h *Handler) SyncProducts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user := middleware.GetUserFromContext(r.Context())
@@ -203,7 +210,7 @@ func (h *Handler) SyncProducts(w http.ResponseWriter, r *http.Request) {
 		adminID = user.ID
 	}
 
-	count, err := h.service.SyncProducts(adminID)
+	result, err := h.service.SyncProducts(adminID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -215,8 +222,70 @@ func (h *Handler) SyncProducts(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "success",
-		"message":   fmt.Sprintf("Katalog produk berhasil disinkronisasi. Total %d produk aktif.", count),
+		"message":   result.Message,
+		"data":      result,
 		"synced_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+// StartDFlashCron memicu background cronjob sinkronisasi harga & status DFLASH
+func (h *Handler) StartDFlashCron(ctx context.Context, interval time.Duration) {
+	h.service.StartDFlashCron(ctx, interval)
+}
+
+// GetCronConfigAndLogs mengembalikan konfigurasi interval cronjob dan histori log perubahan SKU
+func (h *Handler) GetCronConfigAndLogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	cfg := h.service.GetCronConfig()
+	logs := h.service.GetSyncLogs(30)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"config": cfg,
+			"logs":   logs,
+		},
+	})
+}
+
+// UpdateCronConfigRequest payload request update interval cronjob
+type UpdateCronConfigRequest struct {
+	IntervalMinutes int   `json:"interval_minutes"`
+	IsEnabled       *bool `json:"is_enabled,omitempty"`
+}
+
+// UpdateCronConfig mengupdate waktu interval cronjob dari admin dan langsung me-reset timer
+func (h *Handler) UpdateCronConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req UpdateCronConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Payload JSON tidak valid",
+		})
+		return
+	}
+
+	isEnabled := true
+	if req.IsEnabled != nil {
+		isEnabled = *req.IsEnabled
+	}
+
+	cfg, err := h.service.UpdateCronConfig(req.IntervalMinutes, isEnabled)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Interval cronjob berhasil diubah menjadi %d menit.", cfg.IntervalMinutes),
+		"data":    cfg,
 	})
 }
 

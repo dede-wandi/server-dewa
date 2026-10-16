@@ -1,6 +1,7 @@
 package product
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,13 +22,18 @@ type Service interface {
 	CreateProduct(req CreateProductRequest) (*Product, error)
 	UpdateProduct(id string, req UpdateProductRequest) (*Product, error)
 	DeleteProduct(id string) error
-	SyncProducts(adminID string) (int, error)
+	SyncProducts(adminID string) (*SyncResult, error)
+	StartDFlashCron(ctx context.Context, interval time.Duration)
+	GetCronConfig() CronConfig
+	UpdateCronConfig(intervalMinutes int, isEnabled bool) (*CronConfig, error)
+	GetSyncLogs(limit int) []SyncLogEntry
 }
 
 type service struct {
 	repo      Repository
 	sbClient  *supabase.Client
 	vendorMgr *vendor.VendorManager
+	syncer    *DFlashSyncer
 }
 
 // NewService constructs a new product service instance
@@ -36,6 +42,7 @@ func NewService(repo Repository, sbClient *supabase.Client) Service {
 		repo:      repo,
 		sbClient:  sbClient,
 		vendorMgr: vendor.GetGlobalManager(),
+		syncer:    NewDFlashSyncer(""),
 	}
 }
 
@@ -76,10 +83,11 @@ func (s *service) ListProducts(category, brand, search string, activeOnly bool) 
 		return prods
 	}
 
-	// Filter strictly active products only (p.IsActive && status == ACTIVE)
+	// Filter products to display to users (p.IsActive && status != INACTIVE)
+	// Produk dengan status GANGGUAN tetap tampil di user (kecuali status INACTIVE)
 	activeProds := make([]*Product, 0)
 	for _, p := range prods {
-		if p.IsActive && strings.EqualFold(p.Status, "ACTIVE") {
+		if p.IsActive && !strings.EqualFold(p.Status, "INACTIVE") {
 			activeProds = append(activeProds, p)
 		}
 	}
@@ -195,6 +203,40 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 		return nil, err
 	}
 
+	// 5. Cek duplikasi SKU di database khusus untuk vendor yang sama
+	if s.sbClient != nil {
+		checkQuery := fmt.Sprintf("vendor_code=eq.%s&or=(code.eq.%s,buyer_sku_code.eq.%s)&select=id,code,buyer_sku_code,name,vendor_code", vendorCode, strings.ToUpper(code), strings.ToUpper(buyerSKU))
+		existingBytes, err := s.sbClient.GetDB("ppob_products", checkQuery, "")
+		if err == nil && len(existingBytes) > 0 {
+			var dupList []struct {
+				ID         string `json:"id"`
+				Code       string `json:"code"`
+				BuyerSKU   string `json:"buyer_sku_code"`
+				Name       string `json:"name"`
+				VendorCode string `json:"vendor_code"`
+			}
+			if err := json.Unmarshal(existingBytes, &dupList); err == nil && len(dupList) > 0 {
+				return nil, fmt.Errorf("kode SKU '%s' sudah terdaftar pada vendor %s (produk '%s')", buyerSKU, vendorCode, dupList[0].Name)
+			}
+		}
+	}
+
+	// Pastikan kolom DB 'code' unik jika kode dasar sudah dipakai oleh vendor berbeda
+	finalCode := strings.ToUpper(code)
+	if s.sbClient != nil {
+		codeCheckQuery := fmt.Sprintf("code=eq.%s&select=id,vendor_code", finalCode)
+		existingCodeBytes, err := s.sbClient.GetDB("ppob_products", codeCheckQuery, "")
+		if err == nil && len(existingCodeBytes) > 0 {
+			var codeDupList []struct {
+				ID         string `json:"id"`
+				VendorCode string `json:"vendor_code"`
+			}
+			if err := json.Unmarshal(existingCodeBytes, &codeDupList); err == nil && len(codeDupList) > 0 {
+				finalCode = fmt.Sprintf("%s-%s", vendorCode, strings.ToUpper(buyerSKU))
+			}
+		}
+	}
+
 	if req.Name == "" {
 		return nil, errors.New("nama produk (name) wajib diisi")
 	}
@@ -228,14 +270,14 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 		ptsReward = int64(req.Price * 0.01) // 1% cashback default
 	}
 
-	// 5. Simpan ke database Supabase (public.ppob_products)
+	// 6. Simpan ke database Supabase (public.ppob_products)
 	newProd := &Product{
 		CategoryID:    categoryID,
 		CategoryName:  categoryName,
 		Category:      ProductCategory(strings.ToLower(catTag)),
 		VendorCode:    vendorCode,
 		BuyerSKUCode:  buyerSKU,
-		Code:          strings.ToUpper(code),
+		Code:          finalCode,
 		Name:          req.Name,
 		Brand:         brand,
 		CostPrice:     req.CostPrice,
@@ -334,8 +376,9 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 		updatePayload["points_reward"] = *req.PointsReward
 	}
 	if req.Status != nil {
-		updatePayload["status"] = strings.ToUpper(*req.Status)
-		updatePayload["is_active"] = strings.ToUpper(*req.Status) == "ACTIVE"
+		status := strings.ToUpper(strings.TrimSpace(*req.Status))
+		updatePayload["status"] = status
+		updatePayload["is_active"] = status != "INACTIVE"
 	}
 	if req.Description != nil {
 		updatePayload["description"] = *req.Description
@@ -421,6 +464,22 @@ func (s *service) DeleteProduct(id string) error {
 	return nil
 }
 
-func (s *service) SyncProducts(adminID string) (int, error) {
-	return s.repo.SyncFromSupabase(s.sbClient)
+func (s *service) SyncProducts(adminID string) (*SyncResult, error) {
+	return s.syncer.SyncCatalog(s.sbClient, s.repo)
+}
+
+func (s *service) StartDFlashCron(ctx context.Context, interval time.Duration) {
+	s.syncer.StartAutoCronJob(ctx, s.sbClient, s.repo, interval)
+}
+
+func (s *service) GetCronConfig() CronConfig {
+	return s.syncer.GetCronConfig()
+}
+
+func (s *service) UpdateCronConfig(intervalMinutes int, isEnabled bool) (*CronConfig, error) {
+	return s.syncer.UpdateCronSettings(s.sbClient, intervalMinutes, isEnabled)
+}
+
+func (s *service) GetSyncLogs(limit int) []SyncLogEntry {
+	return s.syncer.GetSyncLogs(s.sbClient, limit)
 }

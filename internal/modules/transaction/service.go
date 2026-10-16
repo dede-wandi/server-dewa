@@ -66,6 +66,9 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		return nil, err
 	}
 	if prod.Status != "ACTIVE" {
+		if strings.EqualFold(prod.Status, "GANGGUAN") {
+			return nil, fmt.Errorf("Produk %s saat ini sedang GANGGUAN dari provider. Silakan coba kembali beberapa saat lagi.", prod.Name)
+		}
 		return nil, fmt.Errorf("Produk %s saat ini sedang %s. Silakan coba produk lain.", prod.Name, prod.Status)
 	}
 
