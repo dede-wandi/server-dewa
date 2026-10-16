@@ -70,11 +70,14 @@ func (s *service) ListProducts(category, brand, search string, activeOnly bool) 
 	}
 
 	if !activeOnly {
+		if prods == nil {
+			return []*Product{}
+		}
 		return prods
 	}
 
 	// Filter strictly active products only (p.IsActive && status == ACTIVE)
-	var activeProds []*Product
+	activeProds := make([]*Product, 0)
 	for _, p := range prods {
 		if p.IsActive && strings.EqualFold(p.Status, "ACTIVE") {
 			activeProds = append(activeProds, p)
@@ -104,7 +107,7 @@ func (s *service) GetCategories(activeOnly bool) []string {
 		catMap[string(p.Category)] = true
 	}
 
-	var categories []string
+	categories := make([]string, 0)
 	for c := range catMap {
 		categories = append(categories, c)
 	}
@@ -130,7 +133,7 @@ func (s *service) GetBrands(category string, activeOnly bool) []string {
 		}
 	}
 
-	var brands []string
+	brands := make([]string, 0)
 	for b := range brandMap {
 		brands = append(brands, b)
 	}

@@ -84,6 +84,9 @@ func (h *Handler) ListUserProducts(w http.ResponseWriter, r *http.Request) {
 
 	// activeOnly = true: hanya produk aktif yang tampil ke user
 	products := h.service.ListProducts(category, brand, search, true)
+	if products == nil {
+		products = []*Product{}
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
@@ -126,13 +129,16 @@ func (h *Handler) ListAdminProducts(w http.ResponseWriter, r *http.Request) {
 	products := h.service.ListProducts(category, brand, search, false)
 
 	if status != "" && !strings.EqualFold(status, "ALL") {
-		var filtered []*Product
+		filtered := make([]*Product, 0)
 		for _, p := range products {
 			if strings.EqualFold(p.Status, status) {
 				filtered = append(filtered, p)
 			}
 		}
 		products = filtered
+	}
+	if products == nil {
+		products = []*Product{}
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
