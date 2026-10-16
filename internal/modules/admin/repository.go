@@ -230,15 +230,23 @@ func (r *supabaseRepository) FetchAllTransactions(limit int) ([]map[string]inter
 	}
 
 	dbBytes, err := r.sbClient.CallRPC("get_all_app_transactions", map[string]interface{}{"p_limit": limit}, "")
-	if err != nil || len(dbBytes) == 0 {
-		return nil, err
+	if err == nil && len(dbBytes) > 0 {
+		var dbTrxs []map[string]interface{}
+		if err := json.Unmarshal(dbBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+			return dbTrxs, nil
+		}
 	}
 
-	var dbTrxs []map[string]interface{}
-	if err := json.Unmarshal(dbBytes, &dbTrxs); err != nil {
-		return nil, err
+	// PostgREST fallback: query directly from app_wallet_transactions
+	filter := fmt.Sprintf("order=created_at.desc&limit=%d", limit)
+	if respBytes, err := r.sbClient.GetDB("app_wallet_transactions", filter, ""); err == nil && len(respBytes) > 0 {
+		var dbTrxs []map[string]interface{}
+		if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+			return dbTrxs, nil
+		}
 	}
-	return dbTrxs, nil
+
+	return nil, err
 }
 
 func (r *supabaseRepository) FetchAllPointTransactions(limit int) ([]map[string]interface{}, error) {
@@ -247,15 +255,23 @@ func (r *supabaseRepository) FetchAllPointTransactions(limit int) ([]map[string]
 	}
 
 	dbBytes, err := r.sbClient.CallRPC("get_all_point_transactions", map[string]interface{}{"p_limit": limit}, "")
-	if err != nil || len(dbBytes) == 0 {
-		return nil, err
+	if err == nil && len(dbBytes) > 0 {
+		var dbPts []map[string]interface{}
+		if err := json.Unmarshal(dbBytes, &dbPts); err == nil && len(dbPts) > 0 {
+			return dbPts, nil
+		}
 	}
 
-	var dbPts []map[string]interface{}
-	if err := json.Unmarshal(dbBytes, &dbPts); err != nil {
-		return nil, err
+	// PostgREST fallback: query directly from app_point_transactions
+	filter := fmt.Sprintf("order=created_at.desc&limit=%d", limit)
+	if respBytes, err := r.sbClient.GetDB("app_point_transactions", filter, ""); err == nil && len(respBytes) > 0 {
+		var dbPts []map[string]interface{}
+		if err := json.Unmarshal(respBytes, &dbPts); err == nil && len(dbPts) > 0 {
+			return dbPts, nil
+		}
 	}
-	return dbPts, nil
+
+	return nil, err
 }
 
 func (r *supabaseRepository) AssignRole(email, role, token string) (interface{}, error) {

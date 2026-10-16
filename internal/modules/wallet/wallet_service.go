@@ -966,7 +966,21 @@ func (s *walletService) SetUserLock(userID string, locked bool) (*Wallet, error)
 }
 
 func (s *walletService) GetAllTransactions() []*WalletTransaction {
-	return deduplicateTransactions(s.repo.GetAllTransactions())
+	var combined []*WalletTransaction
+	memTrxs := s.repo.GetAllTransactions()
+	combined = append(combined, memTrxs...)
+
+	if s.sbClient != nil {
+		filter := "order=created_at.desc&limit=200"
+		if respBytes, err := s.sbClient.GetDB("app_wallet_transactions", filter, ""); err == nil && len(respBytes) > 0 {
+			var dbTrxs []*WalletTransaction
+			if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+				combined = append(combined, dbTrxs...)
+			}
+		}
+	}
+
+	return deduplicateTransactions(combined)
 }
 
 func (s *walletService) GetStats() map[string]interface{} {
