@@ -198,15 +198,17 @@ func (s *DFlashSyncer) UpdateCronSettings(sbClient *supabase.Client, intervalMin
 	return &cfg, nil
 }
 
-// GetSyncLogs mengembalikan riwayat log sinkronisasi
+// GetSyncLogs mengembalikan riwayat log sinkronisasi (maksimal 2 hari terakhir)
 func (s *DFlashSyncer) GetSyncLogs(sbClient *supabase.Client, limit int) []SyncLogEntry {
-	if limit <= 0 || limit > 50 {
-		limit = 20
+	if limit <= 0 || limit > 100 {
+		limit = 100
 	}
+
+	twoDaysAgo := time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)
 
 	// Coba ambil dari DB jika tersedia
 	if sbClient != nil {
-		query := fmt.Sprintf("job_key=eq.dflash_sync&order=created_at.desc&limit=%d", limit)
+		query := fmt.Sprintf("job_key=eq.dflash_sync&created_at=gte.%s&order=created_at.desc&limit=%d", twoDaysAgo, limit)
 		dbBytes, err := sbClient.GetDB("cron_sync_logs", query, "")
 		if err == nil && len(dbBytes) > 0 {
 			var dbLogs []SyncLogEntry
@@ -216,11 +218,16 @@ func (s *DFlashSyncer) GetSyncLogs(sbClient *supabase.Client, limit int) []SyncL
 		}
 	}
 
-	// Fallback ke in-memory logs
+	// Fallback ke in-memory logs (filter <= 48 jam)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res := make([]SyncLogEntry, len(s.logs))
-	copy(res, s.logs)
+	cutoff := time.Now().Add(-48 * time.Hour)
+	res := make([]SyncLogEntry, 0, len(s.logs))
+	for _, l := range s.logs {
+		if l.CreatedAt.After(cutoff) {
+			res = append(res, l)
+		}
+	}
 	return res
 }
 
@@ -528,6 +535,12 @@ func (s *DFlashSyncer) recordLog(sbClient *supabase.Client, entry SyncLogEntry) 
 			"updated_at":  time.Now(),
 		}
 		_, _ = sbClient.PatchDB("cron_settings", "key=eq.dflash_sync", settingsPatch, "")
+
+		// 3. Auto-remove log lama yang sudah melebihi 2 hari (> 48 jam)
+		twoDaysAgo := time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)
+		if err := sbClient.DeleteDB("cron_sync_logs", fmt.Sprintf("created_at=lt.%s", twoDaysAgo), ""); err != nil {
+			log.Printf("⚠️ Gagal auto-cleanup log cron lama (>2 hari): %v", err)
+		}
 	}
 }
 
