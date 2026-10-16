@@ -230,10 +230,45 @@ func (r *supabaseRepository) FetchAllTransactions(limit int) ([]map[string]inter
 		return nil, fmt.Errorf("supabase client not available")
 	}
 
+	enrichWithUsers := func(trxs []map[string]interface{}) {
+		users, errUsers := r.FetchRegisteredUsersWallets("")
+		if errUsers == nil && len(users) > 0 {
+			userMap := make(map[string]map[string]string)
+			for _, u := range users {
+				uID, ok := u["user_id"].(string)
+				if !ok || uID == "" {
+					continue
+				}
+				userEmail, _ := u["user_email"].(string)
+				userName := userEmail
+				if meta, ok := u["user_metadata"].(map[string]interface{}); ok {
+					if fn, ok := meta["full_name"].(string); ok && fn != "" {
+						userName = fn
+					} else if dn, ok := meta["display_name"].(string); ok && dn != "" {
+						userName = dn
+					}
+				}
+				userMap[uID] = map[string]string{
+					"email": userEmail,
+					"name":  userName,
+				}
+			}
+			for _, trx := range trxs {
+				if uID, ok := trx["user_id"].(string); ok {
+					if info, found := userMap[uID]; found {
+						trx["user_email"] = info["email"]
+						trx["user_name"] = info["name"]
+					}
+				}
+			}
+		}
+	}
+
 	dbBytes, err := r.sbClient.CallRPC("get_all_app_transactions", map[string]interface{}{"p_limit": limit}, "")
 	if err == nil && len(dbBytes) > 0 {
 		var dbTrxs []map[string]interface{}
 		if err := json.Unmarshal(dbBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+			enrichWithUsers(dbTrxs)
 			return dbTrxs, nil
 		}
 	}
@@ -243,6 +278,7 @@ func (r *supabaseRepository) FetchAllTransactions(limit int) ([]map[string]inter
 	if respBytes, err := r.sbClient.GetDB("app_wallet_transactions", filter, ""); err == nil && len(respBytes) > 0 {
 		var dbTrxs []map[string]interface{}
 		if err := json.Unmarshal(respBytes, &dbTrxs); err == nil && len(dbTrxs) > 0 {
+			enrichWithUsers(dbTrxs)
 			return dbTrxs, nil
 		}
 	}
@@ -305,10 +341,45 @@ func (r *supabaseRepository) FetchAllPointTransactions(limit int) ([]map[string]
 		return nil, fmt.Errorf("supabase client not available")
 	}
 
+	enrichWithUsers := func(trxs []map[string]interface{}) {
+		users, errUsers := r.FetchRegisteredUsersWallets("")
+		if errUsers == nil && len(users) > 0 {
+			userMap := make(map[string]map[string]string)
+			for _, u := range users {
+				uID, ok := u["user_id"].(string)
+				if !ok || uID == "" {
+					continue
+				}
+				userEmail, _ := u["user_email"].(string)
+				userName := userEmail
+				if meta, ok := u["user_metadata"].(map[string]interface{}); ok {
+					if fn, ok := meta["full_name"].(string); ok && fn != "" {
+						userName = fn
+					} else if dn, ok := meta["display_name"].(string); ok && dn != "" {
+						userName = dn
+					}
+				}
+				userMap[uID] = map[string]string{
+					"email": userEmail,
+					"name":  userName,
+				}
+			}
+			for _, trx := range trxs {
+				if uID, ok := trx["user_id"].(string); ok {
+					if info, found := userMap[uID]; found {
+						trx["user_email"] = info["email"]
+						trx["user_name"] = info["name"]
+					}
+				}
+			}
+		}
+	}
+
 	dbBytes, err := r.sbClient.CallRPC("get_all_point_transactions", map[string]interface{}{"p_limit": limit}, "")
 	if err == nil && len(dbBytes) > 0 {
 		var dbPts []map[string]interface{}
 		if err := json.Unmarshal(dbBytes, &dbPts); err == nil && len(dbPts) > 0 {
+			enrichWithUsers(dbPts)
 			return dbPts, nil
 		}
 	}
@@ -318,6 +389,7 @@ func (r *supabaseRepository) FetchAllPointTransactions(limit int) ([]map[string]
 	if respBytes, err := r.sbClient.GetDB("app_point_transactions", filter, ""); err == nil && len(respBytes) > 0 {
 		var dbPts []map[string]interface{}
 		if err := json.Unmarshal(respBytes, &dbPts); err == nil && len(dbPts) > 0 {
+			enrichWithUsers(dbPts)
 			return dbPts, nil
 		}
 	}

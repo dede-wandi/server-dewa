@@ -668,7 +668,60 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 
 	isAdmin := caller.HasAnyRole("admin", "superadmin")
 
-	// 1. Try Supabase RPC
+	// 1. Ambil detail transaksi asli dari DB Supabase jika tersedia
+	var dbOrig map[string]interface{}
+	if s.sbClient != nil {
+		filter := fmt.Sprintf("transaction_code=eq.%s&limit=1", req.TransactionCode)
+		if respBytes, err := s.sbClient.GetDB("app_wallet_transactions", filter, token); err == nil && len(respBytes) > 0 {
+			var rows []map[string]interface{}
+			if err := json.Unmarshal(respBytes, &rows); err == nil && len(rows) > 0 {
+				dbOrig = rows[0]
+			}
+		}
+	}
+
+	targetUID := req.TargetUserID
+	refundAmount := req.Amount
+	origTitle := req.TransactionCode
+	targetDesc := ""
+
+	if dbOrig != nil {
+		if uID, ok := dbOrig["user_id"].(string); ok && uID != "" {
+			targetUID = uID
+		}
+		if amt, ok := dbOrig["amount"].(float64); ok && amt > 0 {
+			refundAmount = amt
+		}
+		if ttl, ok := dbOrig["title"].(string); ok && ttl != "" {
+			origTitle = ttl
+		}
+		if d, ok := dbOrig["description"].(string); ok && d != "" {
+			targetDesc = d
+		}
+	}
+
+	if targetUID == "" {
+		targetUID = caller.ID
+	}
+
+	cleanProdName := origTitle
+	for _, pfx := range []string{"Pembelian ", "Refund Dana: ", "Refund "} {
+		cleanProdName = strings.TrimPrefix(cleanProdName, pfx)
+	}
+	refundTitle := fmt.Sprintf("Refund %s", cleanProdName)
+
+	if targetDesc != "" {
+		if strings.HasPrefix(targetDesc, "Tujuan: ") {
+			targetDesc = strings.TrimPrefix(targetDesc, "Tujuan: ")
+			if idx := strings.Index(targetDesc, " ("); idx != -1 {
+				targetDesc = targetDesc[:idx]
+			}
+		}
+	} else {
+		targetDesc = reason
+	}
+
+	// 2. Coba Supabase RPC refund_app_wallet_transaction
 	if s.sbClient != nil && token != "" {
 		rpcPayload := map[string]interface{}{
 			"p_transaction_code": req.TransactionCode,
@@ -681,13 +734,8 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 				balAfter, _ := rpcRes["balance_after"].(float64)
 				balBefore, _ := rpcRes["balance_before"].(float64)
 				amt, _ := rpcRes["amount"].(float64)
-				targetUID, _ := rpcRes["user_id"].(string)
-				if targetUID == "" {
-					if req.TargetUserID != "" {
-						targetUID = req.TargetUserID
-					} else {
-						targetUID = caller.ID
-					}
+				if uid, ok := rpcRes["user_id"].(string); ok && uid != "" {
+					targetUID = uid
 				}
 
 				wal := s.repo.GetOrCreateWallet(targetUID, "")
@@ -703,8 +751,8 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 					Amount:          amt,
 					BalanceBefore:   balBefore,
 					BalanceAfter:    balAfter,
-					Title:           rpcRes["title"].(string),
-					Description:     rpcRes["description"].(string),
+					Title:           refundTitle,
+					Description:     targetDesc,
 					ReferenceID:     req.TransactionCode,
 					AdminID:         caller.ID,
 					AdminEmail:      caller.Email,
@@ -716,25 +764,69 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 				return trx, wal, nil
 			}
 		}
-	}
 
-	// 2. High-performance O(1) indexed lookup in Repository
-	origTrx, targetUserID := s.repo.FindTransactionByCode(req.TransactionCode)
+		// 3. Fallback Supabase RPC process_app_wallet_mutation langsung jika refund_app_wallet_transaction gagal
+		if refundAmount > 0 && targetUID != "" {
+			mutationPayload := map[string]interface{}{
+				"p_user_id":      targetUID,
+				"p_type":         TypeCredit,
+				"p_category":     CategoryRefund,
+				"p_amount":       refundAmount,
+				"p_title":        refundTitle,
+				"p_description":  targetDesc,
+				"p_reference_id": req.TransactionCode,
+				"p_admin_id":     caller.ID,
+				"p_admin_notes":  reason,
+			}
+			if respBytes, err := s.sbClient.CallRPC("process_app_wallet_mutation", mutationPayload, token); err == nil {
+				var rpcRes map[string]interface{}
+				if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes["success"] == true {
+					trxCode, _ := rpcRes["transaction_code"].(string)
+					balAfter, _ := rpcRes["balance_after"].(float64)
+					balBefore, _ := rpcRes["balance_before"].(float64)
 
-	if !isAdmin && origTrx != nil && targetUserID != caller.ID {
-		return nil, nil, errors.New("Anda tidak memiliki izin untuk me-refund transaksi milik pengguna lain")
-	}
+					wal := s.repo.GetOrCreateWallet(targetUID, "")
+					wal.Balance = balAfter
+					s.repo.SaveWallet(wal)
 
-	if targetUserID == "" {
-		if req.TargetUserID != "" {
-			targetUserID = req.TargetUserID
-		} else {
-			targetUserID = caller.ID
+					// Update status transaksi asal di DB ke REVERSED
+					patchFilter := fmt.Sprintf("transaction_code=eq.%s", req.TransactionCode)
+					_, _ = s.sbClient.PatchDB("app_wallet_transactions", patchFilter, map[string]interface{}{"status": "REVERSED"}, token)
+
+					trx := &WalletTransaction{
+						ID:              fmt.Sprintf("%v", rpcRes["transaction_id"]),
+						TransactionCode: trxCode,
+						UserID:          targetUID,
+						Type:            TypeCredit,
+						Category:        CategoryRefund,
+						Amount:          refundAmount,
+						BalanceBefore:   balBefore,
+						BalanceAfter:    balAfter,
+						Title:           refundTitle,
+						Description:     targetDesc,
+						ReferenceID:     req.TransactionCode,
+						AdminID:         caller.ID,
+						AdminEmail:      caller.Email,
+						AdminNotes:      reason,
+						Status:          "SUCCESS",
+						CreatedAt:       time.Now(),
+					}
+					s.repo.AddTransaction(trx)
+					return trx, wal, nil
+				}
+			}
 		}
 	}
 
-	refundAmount := req.Amount
-	origTitle := req.TransactionCode
+	// 4. In-Memory fallback jika Supabase offline
+	origTrx, memUID := s.repo.FindTransactionByCode(req.TransactionCode)
+	if memUID != "" {
+		targetUID = memUID
+	}
+
+	if !isAdmin && origTrx != nil && targetUID != caller.ID {
+		return nil, nil, errors.New("Anda tidak memiliki izin untuk me-refund transaksi milik pengguna lain")
+	}
 
 	if origTrx != nil {
 		if origTrx.Type != TypeDebit {
@@ -747,43 +839,23 @@ func (s *walletService) Refund(caller *supabase.User, token string, req RefundRe
 
 		refundAmount = origTrx.Amount
 		origTitle = origTrx.Title
-		origTrx.Status = "REFUNDED"
+		origTrx.Status = "REVERSED"
 		s.repo.AddTransaction(origTrx)
 	} else if refundAmount <= 0 {
 		return nil, nil, fmt.Errorf("Transaksi '%s' tidak ditemukan di buku besar dan nominal refund tidak diisi.", req.TransactionCode)
 	}
 
-	wal := s.repo.GetOrCreateWallet(targetUserID, "")
+	wal := s.repo.GetOrCreateWallet(targetUID, "")
 	balanceBefore := wal.Balance
 	wal.Balance += refundAmount
 	balanceAfter := wal.Balance
 	s.repo.SaveWallet(wal)
 
-	cleanProdName := origTitle
-	for _, pfx := range []string{"Pembelian ", "Refund Dana: ", "Refund "} {
-		cleanProdName = strings.TrimPrefix(cleanProdName, pfx)
-	}
-	refundTitle := fmt.Sprintf("Refund %s", cleanProdName)
-
-	targetDesc := ""
-	if origTrx != nil {
-		targetDesc = strings.TrimSpace(origTrx.Description)
-		if strings.HasPrefix(targetDesc, "Tujuan: ") {
-			targetDesc = strings.TrimPrefix(targetDesc, "Tujuan: ")
-			if idx := strings.Index(targetDesc, " ("); idx != -1 {
-				targetDesc = targetDesc[:idx]
-			}
-		}
-	}
-	if targetDesc == "" {
-		targetDesc = reason
-	}
-
 	refundCode := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 	refundTrx := &WalletTransaction{
 		ID:              fmt.Sprintf("ref-%d", time.Now().UnixNano()),
 		TransactionCode: refundCode,
-		UserID:          targetUserID,
+		UserID:          targetUID,
 		Type:            TypeCredit,
 		Category:        CategoryRefund,
 		Amount:          refundAmount,
