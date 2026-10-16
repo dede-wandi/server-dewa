@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
@@ -246,7 +247,57 @@ func (r *supabaseRepository) FetchAllTransactions(limit int) ([]map[string]inter
 		}
 	}
 
-	return nil, err
+	// Cross-user RPC aggregation fallback:
+	// Queries get_all_registered_users_wallets then gets each user's transactions via get_user_wallet_transactions RPC
+	users, errUsers := r.FetchRegisteredUsersWallets("")
+	if errUsers == nil && len(users) > 0 {
+		var allTrx []map[string]interface{}
+		for _, u := range users {
+			uID, ok := u["user_id"].(string)
+			if !ok || uID == "" {
+				continue
+			}
+			userEmail, _ := u["user_email"].(string)
+			userName := userEmail
+			if meta, ok := u["user_metadata"].(map[string]interface{}); ok {
+				if fn, ok := meta["full_name"].(string); ok && fn != "" {
+					userName = fn
+				} else if dn, ok := meta["display_name"].(string); ok && dn != "" {
+					userName = dn
+				}
+			}
+
+			userTrxBytes, errTrx := r.sbClient.CallRPC("get_user_wallet_transactions", map[string]interface{}{
+				"p_user_id": uID,
+				"p_limit":   limit,
+			}, "")
+			if errTrx == nil && len(userTrxBytes) > 0 {
+				var uTrxs []map[string]interface{}
+				if err := json.Unmarshal(userTrxBytes, &uTrxs); err == nil {
+					for _, trx := range uTrxs {
+						trx["user_email"] = userEmail
+						trx["user_name"] = userName
+						allTrx = append(allTrx, trx)
+					}
+				}
+			}
+		}
+
+		sort.Slice(allTrx, func(i, j int) bool {
+			ti, _ := allTrx[i]["created_at"].(string)
+			tj, _ := allTrx[j]["created_at"].(string)
+			return ti > tj
+		})
+
+		if len(allTrx) > limit {
+			allTrx = allTrx[:limit]
+		}
+		if len(allTrx) > 0 {
+			return allTrx, nil
+		}
+	}
+
+	return []map[string]interface{}{}, nil
 }
 
 func (r *supabaseRepository) FetchAllPointTransactions(limit int) ([]map[string]interface{}, error) {
