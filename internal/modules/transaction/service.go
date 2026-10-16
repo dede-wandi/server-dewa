@@ -517,15 +517,45 @@ func (s *service) InquiryBill(user *supabase.User, req BillInquiryRequest) (*Bil
 		Testing:      false,
 	}
 
+	inqChan := vendor.RegisterInquiryWaiter(inqID)
+	defer vendor.RemoveInquiryWaiter(inqID)
+
 	log.Printf("🔍 [INQUIRY DISPATCH] Mengirim Cek Tagihan %s (SKU=%s, Tujuan=%s)...", inqID, inquirySKU, customerNo)
 	vResp, err := vMgr.ProcessOrder(context.Background(), vReq)
 	if err != nil {
-		log.Printf("❌ [INQUIRY FAILED] %s: %v", inqID, err)
-		return nil, fmt.Errorf("Gagal melakukan pengecekan tagihan: %w", err)
+		log.Printf("⚠️ [INQUIRY INITIAL DISPATCH] %s: %v. Menunggu callback vendor...", inqID, err)
 	}
 
-	if vResp.Status == "FAILED" {
-		msg := vResp.Message
+	var finalStatus string
+	var finalMessage string
+	var finalRaw map[string]interface{}
+
+	if vResp != nil && vResp.Status == "SUCCESS" {
+		finalStatus = vResp.Status
+		finalMessage = vResp.Message
+		finalRaw = vResp.RawResponse
+	} else {
+		// Tunggu callback webhook vendor hingga 4 detik (DFlash rata-rata 1-1.5 detik)
+		select {
+		case ev := <-inqChan:
+			log.Printf("⚡ [INQUIRY CALLBACK RECEIVED] %s: Status=%s, Msg=%s", inqID, ev.Status, ev.Message)
+			finalStatus = ev.Status
+			finalMessage = ev.Message
+			finalRaw = map[string]interface{}{"message": ev.Message, "sn": ev.SN}
+		case <-time.After(4000 * time.Millisecond):
+			if vResp != nil {
+				finalStatus = vResp.Status
+				finalMessage = vResp.Message
+				finalRaw = vResp.RawResponse
+			} else {
+				finalStatus = "FAILED"
+				finalMessage = "Waktu pengecekan tagihan ke vendor habis (timeout)"
+			}
+		}
+	}
+
+	if finalStatus == "FAILED" {
+		msg := finalMessage
 		if msg == "" {
 			msg = "Tagihan tidak ditemukan atau sudah lunas"
 		}
@@ -533,7 +563,7 @@ func (s *service) InquiryBill(user *supabase.User, req BillInquiryRequest) (*Bil
 	}
 
 	// Parse teks atau map hasil respon inquiry
-	customerName, period, billAmount, desc := parseInquiryDetails(vResp.Message, vResp.RawResponse, customerNo)
+	customerName, period, billAmount, desc := parseInquiryDetails(finalMessage, finalRaw, customerNo)
 
 	adminFee := prod.Price
 	if adminFee <= 0 {
@@ -555,7 +585,7 @@ func (s *service) InquiryBill(user *supabase.User, req BillInquiryRequest) (*Bil
 		AdminFee:     adminFee,
 		TotalAmount:  totalAmount,
 		Description:  desc,
-		RawResponse:  vResp.RawResponse,
+		RawResponse:  finalRaw,
 		CreatedAt:    time.Now(),
 		ExpiresAt:    time.Now().Add(15 * time.Minute),
 	}
@@ -586,15 +616,19 @@ func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo stri
 	}
 
 	// Parsing regex dari pesan teks DFLASH / OtomaX
+	// Contoh: CPDAM71 ke 01030040238 BERHASIL @16/10 18:03 SN: Dewi Lestari/BLN:APR 26,MEI 26,SEP 26/JBLN:1/SM:1075-1318/TAG:1344540/ADM:9000/TOTAL:1353540.
 	if msg != "" {
-		// Regex Nama: NAMA[:\s]+([A-Z0-9\s\.\,\/\-]+?)(?:,|\.|\s+TAG|\s+IDPEL|$)
-		reNama := regexp.MustCompile(`(?i)(?:NAMA\s*(?:PELANGGAN)?)\s*[:=]\s*([^,;.\n]+)`)
+		// 1. Regex Nama: dari SN: [Nama]/ atau NAMA: [Nama]
+		reNama := regexp.MustCompile(`(?i)(?:NAMA\s*(?:PELANGGAN)?|SN)\s*[:=]\s*([^,;.\n/]+)`)
 		if matches := reNama.FindStringSubmatch(msg); len(matches) > 1 {
-			customerName = strings.TrimSpace(matches[1])
+			val := strings.TrimSpace(matches[1])
+			if !strings.EqualFold(val, "BERHASIL") && !strings.EqualFold(val, "SUKSES") && len(val) > 1 {
+				customerName = val
+			}
 		}
 
-		// Regex Tagihan: TAGIHAN[:\s]+(?:RP\.?|RP\s*)?([0-9\.]+)
-		reTag := regexp.MustCompile(`(?i)(?:TAGIHAN|TAG|POKOK|RP)\s*[:=]?\s*(?:RP\.?)?\s*([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{4,})`)
+		// 2. Regex Tagihan Pokok: TAG:1344540/ atau TAGIHAN: 45000
+		reTag := regexp.MustCompile(`(?i)(?:TAGIHAN|TAG|POKOK)\s*[:=]?\s*(?:RP\.?\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{3,})`)
 		if matches := reTag.FindStringSubmatch(msg); len(matches) > 1 {
 			cleanNum := strings.ReplaceAll(matches[1], ".", "")
 			cleanNum = strings.ReplaceAll(cleanNum, ",", "")
@@ -603,8 +637,20 @@ func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo stri
 			}
 		}
 
-		// Regex Periode: PERIODE[:\s]+([A-Z0-9\s\-]+)
-		rePeriode := regexp.MustCompile(`(?i)(?:PERIODE|BLN|BULAN)\s*[:=]\s*([^,;.\n]+)`)
+		// Jika TAG belum dapat, coba dari TOTAL
+		if billAmount <= 0 {
+			reTotal := regexp.MustCompile(`(?i)(?:TOTAL|JUMLAH|RP)\s*[:=]?\s*(?:RP\.?\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{3,})`)
+			if matches := reTotal.FindStringSubmatch(msg); len(matches) > 1 {
+				cleanNum := strings.ReplaceAll(matches[1], ".", "")
+				cleanNum = strings.ReplaceAll(cleanNum, ",", "")
+				if val, err := strconv.ParseFloat(cleanNum, 64); err == nil && val > 0 {
+					billAmount = val
+				}
+			}
+		}
+
+		// 3. Regex Periode: BLN:APR 26,MEI 26,SEP 26/ atau PERIODE: OKTOBER 2026
+		rePeriode := regexp.MustCompile(`(?i)(?:PERIODE|BLN|BULAN)\s*[:=]\s*([^;.\n/]+)`)
 		if matches := rePeriode.FindStringSubmatch(msg); len(matches) > 1 {
 			period = strings.TrimSpace(matches[1])
 		}

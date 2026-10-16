@@ -232,6 +232,7 @@ func (d *DFlashAdapter) OrderProduct(ctx context.Context, req *VendorOrderReques
 // parseDFlashResponse memproses seluruh format respons dari DFLASH/OtomaX (JSON, XML, maupun Plain Text)
 func (d *DFlashAdapter) parseDFlashResponse(bodyBytes []byte, usedCenter, refID, buyerSKU, dest string) (status string, sn string, msg string, rawResp map[string]interface{}) {
 	rawStr := strings.TrimSpace(string(bodyBytes))
+	log.Printf("📦 [DFLASH RAW HTTP RESPONSE] Center=%s, RefID=%s, SKU=%s, Dest=%s, Body=%s", usedCenter, refID, buyerSKU, dest, rawStr)
 	rawResp = make(map[string]interface{})
 
 	// 1. Coba decode JSON jika server mengembalikan JSON

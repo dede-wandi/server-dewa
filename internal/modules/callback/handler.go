@@ -191,6 +191,22 @@ func (h *Handler) HandleUniversalCallback(w http.ResponseWriter, r *http.Request
 		status = "FAILED"
 	}
 
+	// 3b. Notifikasi real-time jika ini adalah callback inquiry (prefix INQ-)
+	if strings.HasPrefix(strings.ToUpper(refID), "INQ-") {
+		inqStatus := status
+		if strings.Contains(strings.ToUpper(message), "BERHASIL") || strings.Contains(strings.ToUpper(message), "SUKSES") {
+			inqStatus = "SUCCESS"
+		} else if strings.Contains(strings.ToUpper(message), "GAGAL") {
+			inqStatus = "FAILED"
+		}
+		vendor.NotifyInquiryWaiter(refID, &vendor.InquiryEvent{
+			RefID:   refID,
+			Status:  inqStatus,
+			Message: message,
+			SN:      sn,
+		})
+	}
+
 	// 4. Update transaksi di database Supabase jika RefID ditemukan
 	if h.sbClient != nil && refID != "" {
 		updateData := map[string]interface{}{
