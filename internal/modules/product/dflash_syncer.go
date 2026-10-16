@@ -164,8 +164,12 @@ func (s *DFlashSyncer) UpdateCronSettings(sbClient *supabase.Client, intervalMin
 	s.mu.Lock()
 	s.intervalMinutes = intervalMinutes
 	s.isEnabled = isEnabled
-	nextRun := time.Now().Add(time.Duration(intervalMinutes) * time.Minute)
-	s.nextRunAt = &nextRun
+	var nextRun *time.Time
+	if isEnabled {
+		t := time.Now().Add(time.Duration(intervalMinutes) * time.Minute)
+		nextRun = &t
+	}
+	s.nextRunAt = nextRun
 	s.mu.Unlock()
 
 	// 1. Simpan ke tabel cron_settings di database
@@ -540,10 +544,19 @@ func (s *DFlashSyncer) StartAutoCronJob(ctx context.Context, sbClient *supabase.
 	go func() {
 		log.Printf("⏱️ [CRON-DFLASH] Background Auto-Cronjob DFLASH aktif (interval: %v)", interval)
 
-		// Sinkronisasi awal 5 detik setelah server menyala
+		// Sinkronisasi awal 5 detik setelah server menyala (hanya jika cronjob aktif)
 		time.Sleep(5 * time.Second)
-		if _, err := s.SyncCatalog(sbClient, repo); err != nil {
-			log.Printf("⚠️ [CRON-DFLASH] Error sinkronisasi awal: %v", err)
+		s.mu.Lock()
+		active := s.isEnabled
+		s.mu.Unlock()
+
+		if active {
+			log.Println("🔄 [CRON-DFLASH] Menjalankan sinkronisasi awal setelah server menyala...")
+			if _, err := s.SyncCatalog(sbClient, repo); err != nil {
+				log.Printf("⚠️ [CRON-DFLASH] Error sinkronisasi awal: %v", err)
+			}
+		} else {
+			log.Println("⏸️ [CRON-DFLASH] Status Engine dinonaktifkan. Sinkronisasi awal dilewati.")
 		}
 
 		ticker := time.NewTicker(interval)
