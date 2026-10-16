@@ -328,6 +328,9 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 
 	// 6. Simpan ke memori cache agar instan dapat diakses API & Mobile
 	s.repo.Save(newProd)
+	if s.sbClient != nil {
+		_, _ = s.repo.SyncFromSupabase(s.sbClient)
+	}
 
 	return newProd, nil
 }

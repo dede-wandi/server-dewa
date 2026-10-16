@@ -141,6 +141,14 @@ func New(cfg *config.Config) *chi.Mux {
 		api.Route("/admin", func(adminRouter chi.Router) {
 			adminRouter.Use(middleware.RequireAuth(sbClient))
 			adminRouter.Use(middleware.RequireRoles("admin", "superadmin"))
+			adminRouter.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
+					w.Header().Set("Pragma", "no-cache")
+					w.Header().Set("Expires", "0")
+					next.ServeHTTP(w, r)
+				})
+			})
 			adminRouter.Mount("/", adminHandler.Routes())
 			adminRouter.Mount("/products", productHandler.AdminRoutes())
 			adminRouter.Mount("/product", productHandler.AdminRoutes())
