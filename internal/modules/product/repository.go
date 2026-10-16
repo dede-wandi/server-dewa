@@ -61,12 +61,20 @@ func (r *CachedRepository) GetAll() []*Product {
 	return res
 }
 
-func (r *CachedRepository) GetByCode(code string) (*Product, bool) {
+func (r *CachedRepository) GetByCode(codeOrID string) (*Product, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	p, ok := r.products[strings.ToUpper(strings.TrimSpace(code))]
-	return p, ok
+	trimmed := strings.TrimSpace(codeOrID)
+	if p, ok := r.products[strings.ToUpper(trimmed)]; ok {
+		return p, true
+	}
+	for _, p := range r.allCache {
+		if p.ID == trimmed || strings.EqualFold(p.Code, trimmed) || strings.EqualFold(p.BuyerSKUCode, trimmed) {
+			return p, true
+		}
+	}
+	return nil, false
 }
 
 func (r *CachedRepository) GetByCategory(category string) []*Product {
@@ -150,7 +158,7 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 	}
 
 	// 1. Fetch live products from Supabase database (public.ppob_products)
-	dbBytes, err := sbClient.GetDB("ppob_products", "select=*&is_active=eq.true", "")
+	dbBytes, err := sbClient.GetDB("ppob_products", "select=*", "")
 	if err == nil && len(dbBytes) > 0 {
 		var dbProducts []struct {
 			ID            string  `json:"id"`

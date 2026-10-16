@@ -327,7 +327,26 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 	}
 	updatePayload["updated_at"] = time.Now()
 
-	filter := fmt.Sprintf("id=eq.%s", id)
+	// Cari produk yang ada untuk menentukan ID dan Code
+	existing, _ := s.GetProduct(id)
+	targetID := id
+	targetCode := id
+	if existing != nil {
+		if existing.ID != "" {
+			targetID = existing.ID
+		}
+		if existing.Code != "" {
+			targetCode = existing.Code
+		}
+	}
+
+	filter := fmt.Sprintf("id=eq.%s", targetID)
+	if existing != nil && existing.ID != "" {
+		filter = fmt.Sprintf("id=eq.%s", existing.ID)
+	} else if !strings.Contains(id, "-") {
+		filter = fmt.Sprintf("code=eq.%s", strings.ToUpper(id))
+	}
+
 	_, err := s.sbClient.PatchDB("ppob_products", filter, updatePayload, "")
 	if err != nil {
 		return nil, fmt.Errorf("gagal mengupdate produk: %v", err)
@@ -337,7 +356,24 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 	_, _ = s.repo.SyncFromSupabase(s.sbClient)
 
 	// Ambil detail produk terbaru
-	return s.GetProduct(id)
+	updated, err := s.GetProduct(targetCode)
+	if err != nil {
+		updated, err = s.GetProduct(targetID)
+	}
+	if err != nil && existing != nil {
+		if req.Price != nil {
+			existing.Price = *req.Price
+		}
+		if req.Status != nil {
+			existing.Status = strings.ToUpper(*req.Status)
+		}
+		if req.Name != nil {
+			existing.Name = *req.Name
+		}
+		s.repo.Save(existing)
+		return existing, nil
+	}
+	return updated, err
 }
 
 // DeleteProduct menghapus produk
@@ -346,7 +382,14 @@ func (s *service) DeleteProduct(id string) error {
 		return errors.New("database client tidak tersedia")
 	}
 
+	existing, _ := s.GetProduct(id)
 	filter := fmt.Sprintf("id=eq.%s", id)
+	if existing != nil && existing.ID != "" {
+		filter = fmt.Sprintf("id=eq.%s", existing.ID)
+	} else if !strings.Contains(id, "-") {
+		filter = fmt.Sprintf("code=eq.%s", strings.ToUpper(id))
+	}
+
 	err := s.sbClient.DeleteDB("ppob_products", filter, "")
 	if err != nil {
 		return fmt.Errorf("gagal menghapus produk: %v", err)
