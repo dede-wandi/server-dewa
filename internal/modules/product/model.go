@@ -30,6 +30,7 @@ type Product struct {
 	Price         float64         `json:"price"`                     // Harga jual ke pelanggan/mitra
 	PointsReward  int64           `json:"points_reward"`             // Cashback DewaPoin
 	Status        string          `json:"status"`                    // ACTIVE, INACTIVE, GANGGUAN, EMPTY
+	Type          string          `json:"type"`                      // PREPAID, POSTPAID (default: PREPAID)
 	IsActive      bool            `json:"is_active"`                 // true = Aktif, false = Non-aktif
 	Description   string          `json:"description"`
 	Stock         int             `json:"stock"`
@@ -47,6 +48,7 @@ type CreateProductRequest struct {
 	Name         string  `json:"name"`                     // e.g. Promo Indosat Data 14GB 28 Hari
 	Category     string  `json:"category,omitempty"`       // pulsa, data, pln, dll (opsional, diambil dari kategori)
 	Brand        string  `json:"brand,omitempty"`          // e.g. Indosat
+	Type         string  `json:"type,omitempty"`           // PREPAID / POSTPAID (default: PREPAID)
 	CostPrice    float64 `json:"cost_price"`               // e.g. 44640 (Harga modal vendor)
 	Price        float64 `json:"price"`                    // e.g. 46000 (Harga jual)
 	PointsReward *int64  `json:"points_reward,omitempty"`  // Poin reward transaksi
@@ -64,6 +66,7 @@ type UpdateProductRequest struct {
 	Code         *string  `json:"code,omitempty"`
 	Name         *string  `json:"name,omitempty"`
 	Brand        *string  `json:"brand,omitempty"`
+	Type         *string  `json:"type,omitempty"`
 	CostPrice    *float64 `json:"cost_price,omitempty"`
 	Price        *float64 `json:"price,omitempty"`
 	PointsReward *int64   `json:"points_reward,omitempty"`

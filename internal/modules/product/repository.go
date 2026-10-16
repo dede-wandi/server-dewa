@@ -177,6 +177,7 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 			Description   string  `json:"description"`
 			ImageURL      string  `json:"image_url"`
 			IsActive      bool    `json:"is_active"`
+			Type          string  `json:"type"`
 		}
 		if err := json.Unmarshal(dbBytes, &dbProducts); err == nil && len(dbProducts) > 0 {
 			r.mu.Lock()
@@ -212,6 +213,11 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 					isActive = true
 				}
 
+				prodType := strings.ToUpper(strings.TrimSpace(dp.Type))
+				if prodType == "" {
+					prodType = "PREPAID"
+				}
+
 				p := &Product{
 					ID:            dp.ID,
 					CategoryID:    dp.CategoryID,
@@ -221,6 +227,7 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 					Name:          dp.Name,
 					Category:      ProductCategory(strings.ToLower(dp.Category)),
 					Brand:         brand,
+					Type:          prodType,
 					CostPrice:     dp.CostPrice,
 					OriginalPrice: dp.CostPrice,
 					Price:         dp.Price,

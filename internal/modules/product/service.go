@@ -263,6 +263,11 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 		status = "ACTIVE"
 	}
 
+	prodType := strings.ToUpper(strings.TrimSpace(req.Type))
+	if prodType == "" {
+		prodType = "PREPAID"
+	}
+
 	ptsReward := int64(0)
 	if req.PointsReward != nil {
 		ptsReward = *req.PointsReward
@@ -280,6 +285,7 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 		Code:          finalCode,
 		Name:          req.Name,
 		Brand:         brand,
+		Type:          prodType,
 		CostPrice:     req.CostPrice,
 		OriginalPrice: req.CostPrice,
 		Price:         req.Price,
@@ -299,6 +305,7 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 			"buyer_sku_code": buyerSKU,
 			"code":           newProd.Code,
 			"name":           newProd.Name,
+			"type":           prodType,
 			"category":       string(newProd.Category),
 			"brand":          newProd.Brand,
 			"cost_price":     newProd.CostPrice,
@@ -369,6 +376,13 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 	if req.Brand != nil {
 		updatePayload["brand"] = *req.Brand
 	}
+	if req.Type != nil {
+		prodType := strings.ToUpper(strings.TrimSpace(*req.Type))
+		if prodType == "" {
+			prodType = "PREPAID"
+		}
+		updatePayload["type"] = prodType
+	}
 	if req.CostPrice != nil {
 		updatePayload["cost_price"] = *req.CostPrice
 	}
@@ -436,6 +450,9 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 		}
 		if req.Name != nil {
 			existing.Name = *req.Name
+		}
+		if req.Type != nil {
+			existing.Type = strings.ToUpper(strings.TrimSpace(*req.Type))
 		}
 		s.repo.Save(existing)
 		return existing, nil
