@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -516,22 +517,21 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
-		adminEmail := "Super Admin"
-		if adminUser != nil && adminUser.Email != "" {
-			adminEmail = adminUser.Email
-		}
-		title = fmt.Sprintf("Top Up Saldo oleh Admin (%s)", adminEmail)
+		title = "Top Up Saldo"
 	}
 
 	desc := strings.TrimSpace(req.Description)
 	if desc == "" {
-		desc = fmt.Sprintf("Penambahan saldo pengguna via %s", channel)
-		if req.Notes != "" {
-			desc += fmt.Sprintf(" [Catatan: %s]", req.Notes)
+		cleanNotes := strings.TrimSpace(req.Notes)
+		if cleanNotes != "" && !strings.EqualFold(cleanNotes, "Top up Saldo") && !strings.EqualFold(cleanNotes, "Top up langsung admin") {
+			desc = cleanNotes
+		} else {
+			desc = "Top Up Saldo"
 		}
 	}
 
-	refID := fmt.Sprintf("TOPUP-ADM-%s-%d", time.Now().Format("20060102"), time.Now().UnixNano()%100000)
+	// 16-Digit pure numeric reference code (Standar Gojek / transaksi produk: YYMMDDHHMMSS + 4 random digits)
+	refID := fmt.Sprintf("%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
 
 	// Send in-app notification to target user asynchronously
 	if s.sbClient != nil {
@@ -539,7 +539,7 @@ func (s *adminService) TopUpUser(adminUser *supabase.User, token string, req Adm
 			"user_id": req.TargetUserID,
 			"type":    "PAYMENT",
 			"title":   "Top Up Saldo Berhasil",
-			"message": fmt.Sprintf("Saldo sebesar Rp %s berhasil ditambahkan ke akun Anda via %s.", formatRupiahAdmin(int64(req.Amount)), channel),
+			"message": fmt.Sprintf("Saldo sebesar Rp %s berhasil ditambahkan ke akun Anda.", formatRupiahAdmin(int64(req.Amount))),
 			"status":  "Belum Dibaca",
 		}
 		go func() {

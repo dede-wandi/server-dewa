@@ -550,8 +550,11 @@ func (s *walletService) ApproveTopUp(adminUser *supabase.User, token string, tra
 					trx.AdminID = adminUser.ID
 					trx.AdminEmail = adminUser.Email
 				}
-				trx.Title = "Top Up Saldo (Disetujui Admin)"
-				trx.Description = fmt.Sprintf("Deposit saldo telah diverifikasi dan disetujui. Catatan: %s", notes)
+				trx.Title = "Top Up Saldo"
+				trx.Description = "Top Up Saldo"
+				if strings.TrimSpace(notes) != "" && !strings.EqualFold(strings.TrimSpace(notes), "Deposit disetujui") {
+					trx.Description = strings.TrimSpace(notes)
+				}
 				s.repo.UpdateTransaction(trx)
 				return trx, wal, nil
 			}
@@ -903,10 +906,10 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 			adminEmail = adminUser.Email
 		}
 	}
-	title := fmt.Sprintf("Koreksi Saldo oleh Super Admin (%s)", adminEmail)
-	desc := fmt.Sprintf("Penyesuaian saldo manual: %s", req.Reason)
-	if req.AdminNotes != "" {
-		desc += fmt.Sprintf(" [Catatan: %s]", req.AdminNotes)
+	title := "Koreksi Saldo"
+	desc := strings.TrimSpace(req.Reason)
+	if desc == "" {
+		desc = "Koreksi Saldo"
 	}
 
 	// 1. Try Supabase RPC
