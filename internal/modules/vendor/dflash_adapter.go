@@ -309,14 +309,18 @@ func (d *DFlashAdapter) parseDFlashResponse(bodyBytes []byte, usedCenter, refID,
 		return
 	}
 
-	// Indikator PENDING / ANTRIAN
+	// Indikator PENDING / ANTRIAN / DITERIMA OTOMAX
 	isPending := strings.Contains(upper, "DIPROSES") ||
 		strings.Contains(upper, "ANTRIAN") ||
 		strings.Contains(upper, "MENUNGGU") ||
-		strings.Contains(upper, "PENDING")
+		strings.Contains(upper, "PENDING") ||
+		strings.TrimSpace(upper) == "OK"
 
 	if isPending {
 		status = "PENDING"
+		if strings.TrimSpace(upper) == "OK" {
+			msg = "Permintaan cek transaksi diterima server vendor (OK)"
+		}
 		return
 	}
 
