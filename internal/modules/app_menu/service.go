@@ -561,7 +561,7 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest, rawMaps ...ma
 		payload["action_type"] = req.ActionType
 	}
 
-	// 3. Handling target_url & route (bisa dikosongkan/null)
+	// 3. Handling target_url (bisa dikosongkan/null, tabel Supabase hanya memiliki kolom target_url)
 	if rawMap != nil {
 		if val, exists := rawMap["target_url"]; exists {
 			if val == nil || fmt.Sprintf("%v", val) == "" || fmt.Sprintf("%v", val) == "null" {
@@ -572,12 +572,14 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest, rawMaps ...ma
 				current.TargetURL = clean
 				payload["target_url"] = clean
 			}
-		}
-		if val, exists := rawMap["route"]; exists {
+		} else if val, exists := rawMap["route"]; exists {
 			if val == nil || fmt.Sprintf("%v", val) == "" || fmt.Sprintf("%v", val) == "null" {
-				payload["route"] = ""
+				current.TargetURL = ""
+				payload["target_url"] = ""
 			} else {
-				payload["route"] = strings.TrimSpace(fmt.Sprintf("%v", val))
+				clean := strings.TrimSpace(fmt.Sprintf("%v", val))
+				current.TargetURL = clean
+				payload["target_url"] = clean
 			}
 		}
 	} else if req.TargetURL != nil {
