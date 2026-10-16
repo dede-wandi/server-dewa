@@ -517,9 +517,10 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 		current.ActionType = req.ActionType
 		payload["action_type"] = req.ActionType
 	}
-	if req.TargetURL != "" {
-		current.TargetURL = req.TargetURL
-		payload["target_url"] = req.TargetURL
+	if req.TargetURL != nil {
+		clean := strings.TrimSpace(*req.TargetURL)
+		current.TargetURL = clean
+		payload["target_url"] = clean
 	}
 	if req.IconType != "" {
 		current.IconType = req.IconType

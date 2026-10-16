@@ -66,7 +66,7 @@ type UpdateMenuRequest struct {
 	Subtitle     string  `json:"subtitle,omitempty"`
 	CategoryID   *string `json:"category_id,omitempty"`
 	ActionType   string  `json:"action_type,omitempty"`
-	TargetURL    string  `json:"target_url,omitempty"`
+	TargetURL    *string `json:"target_url,omitempty"`
 	IconType     string  `json:"icon_type,omitempty"`
 	IconName     string  `json:"icon_name,omitempty"`
 	IconURL      string  `json:"icon_url,omitempty"`
