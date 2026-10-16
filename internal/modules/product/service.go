@@ -14,10 +14,10 @@ import (
 
 // Service defines domain business operations for digital product management
 type Service interface {
-	ListProducts(category, brand, search string) []*Product
+	ListProducts(category, brand, search string, activeOnly bool) []*Product
 	GetProduct(code string) (*Product, error)
-	GetCategories() []string
-	GetBrands(category string) []string
+	GetCategories(activeOnly bool) []string
+	GetBrands(category string, activeOnly bool) []string
 	CreateProduct(req CreateProductRequest) (*Product, error)
 	UpdateProduct(id string, req UpdateProductRequest) (*Product, error)
 	DeleteProduct(id string) error
@@ -39,19 +39,19 @@ func NewService(repo Repository, sbClient *supabase.Client) Service {
 	}
 }
 
-func (s *service) ListProducts(category, brand, search string) []*Product {
+func (s *service) ListProducts(category, brand, search string, activeOnly bool) []*Product {
 	category = strings.ToLower(strings.TrimSpace(category))
 	brand = strings.ToLower(strings.TrimSpace(brand))
 	search = strings.TrimSpace(search)
 
+	var prods []*Product
+
 	// If search query provided, search across all fields
 	if search != "" {
-		return s.repo.Search(search)
-	}
-
-	// Filter by category if specified
-	if category != "" {
-		prods := s.repo.GetByCategory(category)
+		prods = s.repo.Search(search)
+	} else if category != "" {
+		// Filter by category if specified
+		prods = s.repo.GetByCategory(category)
 		if brand != "" {
 			var filtered []*Product
 			for _, p := range prods {
@@ -59,18 +59,28 @@ func (s *service) ListProducts(category, brand, search string) []*Product {
 					filtered = append(filtered, p)
 				}
 			}
-			return filtered
+			prods = filtered
 		}
+	} else if brand != "" {
+		// Filter by brand if specified
+		prods = s.repo.GetByBrand(brand)
+	} else {
+		// Return all cached products
+		prods = s.repo.GetAll()
+	}
+
+	if !activeOnly {
 		return prods
 	}
 
-	// Filter by brand if specified
-	if brand != "" {
-		return s.repo.GetByBrand(brand)
+	// Filter strictly active products only (p.IsActive && status == ACTIVE)
+	var activeProds []*Product
+	for _, p := range prods {
+		if p.IsActive && strings.EqualFold(p.Status, "ACTIVE") {
+			activeProds = append(activeProds, p)
+		}
 	}
-
-	// Return all cached products
-	return s.repo.GetAll()
+	return activeProds
 }
 
 func (s *service) GetProduct(code string) (*Product, error) {
@@ -81,10 +91,16 @@ func (s *service) GetProduct(code string) (*Product, error) {
 	return p, nil
 }
 
-func (s *service) GetCategories() []string {
-	all := s.repo.GetAll()
+func (s *service) GetCategories(activeOnly bool) []string {
+	var prods []*Product
+	if activeOnly {
+		prods = s.ListProducts("", "", "", true)
+	} else {
+		prods = s.repo.GetAll()
+	}
+
 	catMap := make(map[string]bool)
-	for _, p := range all {
+	for _, p := range prods {
 		catMap[string(p.Category)] = true
 	}
 
@@ -96,10 +112,12 @@ func (s *service) GetCategories() []string {
 	return categories
 }
 
-func (s *service) GetBrands(category string) []string {
+func (s *service) GetBrands(category string, activeOnly bool) []string {
 	category = strings.ToLower(strings.TrimSpace(category))
 	var prods []*Product
-	if category != "" {
+	if activeOnly {
+		prods = s.ListProducts(category, "", "", true)
+	} else if category != "" {
 		prods = s.repo.GetByCategory(category)
 	} else {
 		prods = s.repo.GetAll()

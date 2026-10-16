@@ -200,8 +200,15 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 					vendorCode = "MANUAL"
 				}
 				status := dp.Status
-				if status == "" {
+				isActive := dp.IsActive
+				if !isActive || strings.EqualFold(status, "INACTIVE") {
+					status = "INACTIVE"
+					isActive = false
+				} else if status == "" {
 					status = "ACTIVE"
+					isActive = true
+				} else {
+					isActive = strings.EqualFold(status, "ACTIVE")
 				}
 
 				p := &Product{
@@ -218,6 +225,7 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 					Price:         dp.Price,
 					PointsReward:  ptsReward,
 					Status:        status,
+					IsActive:      isActive,
 					Description:   dp.Description,
 					Stock:         dp.Stock,
 					ImageURL:      dp.ImageURL,

@@ -30,6 +30,7 @@ type Product struct {
 	Price         float64         `json:"price"`                     // Harga jual ke pelanggan/mitra
 	PointsReward  int64           `json:"points_reward"`             // Cashback DewaPoin
 	Status        string          `json:"status"`                    // ACTIVE, INACTIVE, GANGGUAN, EMPTY
+	IsActive      bool            `json:"is_active"`                 // true = Aktif, false = Non-aktif
 	Description   string          `json:"description"`
 	Stock         int             `json:"stock"`
 	ImageURL      string          `json:"image_url,omitempty"`

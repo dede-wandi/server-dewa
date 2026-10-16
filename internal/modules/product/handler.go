@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/middleware"
@@ -37,16 +38,17 @@ func (h *Handler) GetService() Service {
 }
 
 // Routes mounts all endpoints for products
+// Routes mounts all endpoints for products (User / Public Catalog)
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	// Public / General product catalog
+	// Public / General product catalog (User: hanya produk aktif)
 	r.Get("/ping", h.Ping)
 	r.Get("/info", h.Info)
-	r.Get("/", h.ListProducts)
+	r.Get("/", h.ListUserProducts)
 	r.Get("/categories", h.ListCategories)
 	r.Get("/brands", h.ListBrands)
-	r.Get("/{code}", h.GetProductDetail)
+	r.Get("/{code}", h.GetUserProductDetail)
 
 	// Admin-only / CRUD operations
 	r.Group(func(adminOnly chi.Router) {
@@ -63,8 +65,8 @@ func (h *Handler) Routes() chi.Router {
 // AdminRoutes mounts dedicated administrative CRUD endpoints
 func (h *Handler) AdminRoutes() chi.Router {
 	r := chi.NewRouter()
-	r.Get("/", h.ListProducts)
-	r.Get("/{code}", h.GetProductDetail)
+	r.Get("/", h.ListAdminProducts)
+	r.Get("/{code}", h.GetAdminProductDetail)
 	r.Post("/", h.CreateProduct)
 	r.Put("/{id}", h.UpdateProduct)
 	r.Delete("/{id}", h.DeleteProduct)
@@ -72,15 +74,16 @@ func (h *Handler) AdminRoutes() chi.Router {
 	return r
 }
 
-// ListProducts returns the list of digital products, optionally filtered by category, brand, or search
-func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
+// ListUserProducts returns ONLY active products for mobile app / end users
+func (h *Handler) ListUserProducts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	category := r.URL.Query().Get("category")
 	brand := r.URL.Query().Get("brand")
 	search := r.URL.Query().Get("search")
 
-	products := h.service.ListProducts(category, brand, search)
+	// activeOnly = true: hanya produk aktif yang tampil ke user
+	products := h.service.ListProducts(category, brand, search, true)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
@@ -89,8 +92,58 @@ func (h *Handler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetProductDetail returns details for a single product code
-func (h *Handler) GetProductDetail(w http.ResponseWriter, r *http.Request) {
+// GetUserProductDetail returns details for an ACTIVE product (returns 404 if inactive)
+func (h *Handler) GetUserProductDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	code := chi.URLParam(r, "code")
+
+	p, err := h.service.GetProduct(code)
+	if err != nil || !p.IsActive || !strings.EqualFold(p.Status, "ACTIVE") {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Produk sedang tidak aktif atau tidak ditemukan",
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data":   p,
+	})
+}
+
+// ListAdminProducts returns all products (active & inactive) for admin management
+func (h *Handler) ListAdminProducts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	category := r.URL.Query().Get("category")
+	brand := r.URL.Query().Get("brand")
+	search := r.URL.Query().Get("search")
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+
+	// activeOnly = false: admin dapat melihat seluruh produk
+	products := h.service.ListProducts(category, brand, search, false)
+
+	if status != "" && !strings.EqualFold(status, "ALL") {
+		var filtered []*Product
+		for _, p := range products {
+			if strings.EqualFold(p.Status, status) {
+				filtered = append(filtered, p)
+			}
+		}
+		products = filtered
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"count":  len(products),
+		"data":   products,
+	})
+}
+
+// GetAdminProductDetail returns details for any product for admin
+func (h *Handler) GetAdminProductDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	code := chi.URLParam(r, "code")
 
@@ -110,10 +163,10 @@ func (h *Handler) GetProductDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListCategories returns all available categories
+// ListCategories returns all available categories for active products
 func (h *Handler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	categories := h.service.GetCategories()
+	categories := h.service.GetCategories(true)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
@@ -122,11 +175,11 @@ func (h *Handler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListBrands returns all brands or brands for a specific category
+// ListBrands returns all brands for active products
 func (h *Handler) ListBrands(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	category := r.URL.Query().Get("category")
-	brands := h.service.GetBrands(category)
+	brands := h.service.GetBrands(category, true)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
