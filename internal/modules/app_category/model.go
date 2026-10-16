@@ -56,7 +56,7 @@ type UpdateCategoryRequest struct {
 	IconURL     string                 `json:"icon_url,omitempty"`
 	BannerURL   string                 `json:"banner_url,omitempty"`
 	Badge       string                 `json:"badge,omitempty"`
-	Type        string                 `json:"type,omitempty"`
+	Type        *string                `json:"type,omitempty"`
 	Level       *int                   `json:"level,omitempty"`
 	SortOrder   *int                   `json:"sort_order,omitempty"`
 	IsActive    *bool                  `json:"is_active,omitempty"`

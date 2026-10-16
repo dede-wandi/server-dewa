@@ -439,25 +439,6 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 	}
 
 	categoryType := strings.ToLower(strings.TrimSpace(req.Type))
-	if categoryType == "" {
-		if strings.Contains(slug, "data") || strings.Contains(slug, "internet") {
-			categoryType = "data"
-		} else if strings.Contains(slug, "voucher") {
-			categoryType = "voucher"
-		} else if strings.Contains(slug, "tlp") || strings.Contains(slug, "telepon") {
-			categoryType = "tlp"
-		} else if strings.Contains(slug, "pln") {
-			categoryType = "pln"
-		} else if strings.Contains(slug, "game") {
-			categoryType = "game"
-		} else if strings.Contains(slug, "emoney") || strings.Contains(slug, "wallet") {
-			categoryType = "emoney"
-		} else if strings.Contains(slug, "pdam") {
-			categoryType = "pdam"
-		} else {
-			categoryType = "pulsa"
-		}
-	}
 
 	newCat := AppCategory{
 		ID:          newID,
@@ -569,9 +550,10 @@ func (s *categoryService) UpdateCategory(id string, req UpdateCategoryRequest) (
 		current.Badge = req.Badge
 		payload["badge"] = req.Badge
 	}
-	if req.Type != "" {
-		current.Type = strings.ToLower(strings.TrimSpace(req.Type))
-		payload["type"] = current.Type
+	if req.Type != nil {
+		cleanType := strings.ToLower(strings.TrimSpace(*req.Type))
+		current.Type = cleanType
+		payload["type"] = cleanType
 	}
 	if req.Level != nil {
 		current.Level = *req.Level
