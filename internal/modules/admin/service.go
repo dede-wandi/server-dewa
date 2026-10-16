@@ -59,6 +59,28 @@ func isSuperAdminUser(rStr, emailStr string) bool {
 }
 
 func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListItem, error) {
+	nameMap := make(map[string]string)
+	if s.repo != nil {
+		if authUsers, err := s.repo.FetchAuthAdminUsers(1, 1000); err == nil && len(authUsers) > 0 {
+			for _, au := range authUsers {
+				var fn string
+				if len(au.UserMetadata) > 0 {
+					if name, ok := au.UserMetadata["full_name"].(string); ok && name != "" {
+						fn = name
+					} else if dn, ok := au.UserMetadata["display_name"].(string); ok && dn != "" {
+						fn = dn
+					} else if nm, ok := au.UserMetadata["name"].(string); ok && nm != "" {
+						fn = nm
+					}
+				}
+				if fn != "" {
+					nameMap[au.ID] = fn
+					nameMap[strings.ToLower(au.Email)] = fn
+				}
+			}
+		}
+	}
+
 	// 1. Try querying real users & wallets directly from database via Supabase RPC
 	if s.repo != nil {
 		if dbUsers, err := s.repo.FetchRegisteredUsersWallets(token); err == nil && len(dbUsers) > 0 {
@@ -94,6 +116,13 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 						fullName = dn
 					} else if nm, ok := u["name"].(string); ok && nm != "" {
 						fullName = nm
+					}
+				}
+				if fullName == "" {
+					if fn, ok := nameMap[userID]; ok && fn != "" {
+						fullName = fn
+					} else if fn, ok := nameMap[strings.ToLower(userEmail)]; ok && fn != "" {
+						fullName = fn
 					}
 				}
 
@@ -236,13 +265,19 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 			if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
 				continue
 			}
-			if search != "" && !strings.Contains(strings.ToLower(wal.UserEmail), search) {
+			fullName := nameMap[wal.UserID]
+			if fullName == "" {
+				fullName = nameMap[strings.ToLower(wal.UserEmail)]
+			}
+
+			if search != "" && !strings.Contains(strings.ToLower(wal.UserEmail), search) && !strings.Contains(strings.ToLower(fullName), search) {
 				continue
 			}
 
 			userList = append(userList, UserListItem{
 				UserID:    wal.UserID,
 				UserEmail: wal.UserEmail,
+				FullName:  fullName,
 				Role:      string(def.Role),
 				RoleName:  def.Name,
 				Category:  string(def.Category),
