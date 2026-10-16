@@ -506,6 +506,32 @@
               }
             },
             {
+              "name": "Get Products by Type (PREPAID / POSTPAID)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/products?type=POSTPAID",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ],
+                  "query": [
+                    {
+                      "key": "type",
+                      "value": "POSTPAID",
+                      "description": "Filter tipe produk: PREPAID (Prabayar) atau POSTPAID (Pascabayar/Tagihan)"
+                    }
+                  ]
+                },
+                "description": "Mengambil katalog produk berdasarkan tipe (PREPAID atau POSTPAID seperti PDAM, PLN Pasca, BPJS)."
+              }
+            },
+            {
               "name": "Search Products",
               "request": {
                 "method": "GET",
@@ -2627,7 +2653,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"category_id\": \"78c83088-3f5d-4386-ac76-751eabf60e3b\",\n  \"vendor_code\": \"DFLASH\",\n  \"buyer_sku_code\": \"FIBP14\",\n  \"code\": \"FIBP14\",\n  \"name\": \"Promo Indosat Data 14GB 28 Hari\",\n  \"brand\": \"Indosat\",\n  \"cost_price\": 44640,\n  \"price\": 46000,\n  \"status\": \"ACTIVE\",\n  \"description\": \"Promo Kuota Data Indosat 14GB masa aktif 28 hari\"\n}"
+                  "raw": "{\n  \"category_id\": \"78c83088-3f5d-4386-ac76-751eabf60e3b\",\n  \"vendor_code\": \"DFLASH\",\n  \"buyer_sku_code\": \"FIBP14\",\n  \"code\": \"FIBP14\",\n  \"name\": \"Promo Indosat Data 14GB 28 Hari\",\n  \"brand\": \"Indosat\",\n  \"type\": \"PREPAID\",\n  \"cost_price\": 44640,\n  \"price\": 46000,\n  \"status\": \"ACTIVE\",\n  \"description\": \"Promo Kuota Data Indosat 14GB masa aktif 28 hari\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/products",
@@ -2641,7 +2667,46 @@
                     "products"
                   ]
                 },
-                "description": "Menambahkan produk baru. WAJIB mengisi category_id yang valid (produk tidak bisa dibuat jika kategori tidak ada). Memvalidasi buyer_sku_code dan vendor_code secara OOP."
+                "description": "Menambahkan produk baru. WAJIB mengisi category_id yang valid (produk tidak bisa dibuat jika kategori tidak ada). Memvalidasi buyer_sku_code dan vendor_code secara OOP. Mendukung type PREPAID atau POSTPAID."
+              }
+            },
+            {
+              "name": "Create Postpaid Product (Pascabayar / Tagihan)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"category_id\": \"78c83088-3f5d-4386-ac76-751eabf60e3b\",\n  \"vendor_code\": \"DFLASH\",\n  \"buyer_sku_code\": \"BPDAM177\",\n  \"inquiry_sku_code\": \"CPDAM177\",\n  \"code\": \"PDAM-BELU\",\n  \"name\": \"PDAM KAB. BELU\",\n  \"brand\": \"PDAM\",\n  \"type\": \"POSTPAID\",\n  \"cost_price\": -1100,\n  \"price\": 2500,\n  \"status\": \"ACTIVE\",\n  \"description\": \"Pembayaran Tagihan Air PDAM Kab. Belu (Biaya Admin Rp 2.500, Komisi Vendor Rp 1.100)\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/products",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "products"
+                  ]
+                },
+                "description": "Menambahkan produk Pascabayar (POSTPAID). Memiliki buyer_sku_code (kode bayar ke vendor) dan inquiry_sku_code (kode cek/inquiry tagihan)."
               }
             },
             {
@@ -2666,7 +2731,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"price\": 46500,\n  \"status\": \"ACTIVE\",\n  \"description\": \"Update harga promo Indosat Data 14GB\"\n}"
+                  "raw": "{\n  \"price\": 46500,\n  \"type\": \"POSTPAID\",\n  \"inquiry_sku_code\": \"CPDAM177\",\n  \"status\": \"ACTIVE\",\n  \"description\": \"Update harga dan tipe produk\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/products/:id",

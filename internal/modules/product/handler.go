@@ -88,9 +88,25 @@ func (h *Handler) ListUserProducts(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	brand := r.URL.Query().Get("brand")
 	search := r.URL.Query().Get("search")
+	prodType := strings.TrimSpace(r.URL.Query().Get("type"))
 
 	// activeOnly = true: hanya produk aktif yang tampil ke user
 	products := h.service.ListProducts(category, brand, search, true)
+
+	if prodType != "" && !strings.EqualFold(prodType, "ALL") {
+		filtered := make([]*Product, 0)
+		for _, p := range products {
+			pType := p.Type
+			if pType == "" {
+				pType = "PREPAID"
+			}
+			if strings.EqualFold(pType, prodType) {
+				filtered = append(filtered, p)
+			}
+		}
+		products = filtered
+	}
+
 	if products == nil {
 		products = []*Product{}
 	}
@@ -131,6 +147,7 @@ func (h *Handler) ListAdminProducts(w http.ResponseWriter, r *http.Request) {
 	brand := r.URL.Query().Get("brand")
 	search := r.URL.Query().Get("search")
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	prodType := strings.TrimSpace(r.URL.Query().Get("type"))
 
 	// activeOnly = false: admin dapat melihat seluruh produk
 	products := h.service.ListProducts(category, brand, search, false)
@@ -144,6 +161,21 @@ func (h *Handler) ListAdminProducts(w http.ResponseWriter, r *http.Request) {
 		}
 		products = filtered
 	}
+
+	if prodType != "" && !strings.EqualFold(prodType, "ALL") {
+		filtered := make([]*Product, 0)
+		for _, p := range products {
+			pType := p.Type
+			if pType == "" {
+				pType = "PREPAID"
+			}
+			if strings.EqualFold(pType, prodType) {
+				filtered = append(filtered, p)
+			}
+		}
+		products = filtered
+	}
+
 	if products == nil {
 		products = []*Product{}
 	}
