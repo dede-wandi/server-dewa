@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/modules/app_category"
+	"github.com/dede-wandi/server-dewa/internal/modules/product"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
 
@@ -98,12 +99,53 @@ func buildMenuTree(flat []AppMenu, rootParentID string) []AppMenu {
 }
 
 func (s *menuService) populateCategory(menu *AppMenu) {
-	if menu == nil || menu.CategoryID == nil || *menu.CategoryID == "" || s.catService == nil {
+	if menu == nil || s.catService == nil {
 		return
 	}
-	cat, err := s.catService.GetCategoryByID(*menu.CategoryID)
+
+	targetCat := ""
+	if menu.CategoryID != nil && strings.TrimSpace(*menu.CategoryID) != "" {
+		targetCat = strings.TrimSpace(*menu.CategoryID)
+	} else if menu.TargetURL != "" {
+		target := strings.TrimSpace(menu.TargetURL)
+		target = strings.TrimPrefix(target, "/")
+		parts := strings.Split(target, "/")
+		if len(parts) >= 2 && (parts[0] == "category" || parts[0] == "categories" || parts[0] == "sub-category" || parts[0] == "menu") {
+			if parts[1] != "[id]" && parts[1] != "" && parts[1] != "#" {
+				targetCat = parts[1]
+			}
+		} else if len(parts) == 1 && parts[0] != "" && parts[0] != "[id]" && parts[0] != "#" && !strings.HasPrefix(parts[0], "http") {
+			targetCat = parts[0]
+		}
+	}
+
+	if targetCat == "" {
+		return
+	}
+
+	cat, err := s.catService.GetCategoryByID(targetCat)
+	if err != nil || cat == nil {
+		cat, err = s.catService.GetCategoryByCodeOrSlug(targetCat)
+	}
+
 	if err == nil && cat != nil {
 		menu.Category = cat
+		if menu.CategoryID == nil || *menu.CategoryID == "" {
+			catID := cat.ID
+			menu.CategoryID = &catID
+		}
+
+		if len(cat.Products) > 0 {
+			menu.Products = cat.Products
+		} else if len(cat.Children) > 0 {
+			var allChildProds []*product.Product
+			for _, child := range cat.Children {
+				if len(child.Products) > 0 {
+					allChildProds = append(allChildProds, child.Products...)
+				}
+			}
+			menu.Products = allChildProds
+		}
 	}
 }
 

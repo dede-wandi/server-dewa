@@ -145,7 +145,13 @@ func (r *CachedRepository) rebuildIndexLocked() {
 		r.allCache = append(r.allCache, p)
 
 		cat := strings.ToLower(string(p.Category))
-		r.byCategory[cat] = append(r.byCategory[cat], p)
+		if cat != "" {
+			r.byCategory[cat] = append(r.byCategory[cat], p)
+		}
+		if p.CategoryID != "" {
+			catIDLower := strings.ToLower(p.CategoryID)
+			r.byCategory[catIDLower] = append(r.byCategory[catIDLower], p)
+		}
 
 		brand := strings.ToLower(p.Brand)
 		r.byBrand[brand] = append(r.byBrand[brand], p)

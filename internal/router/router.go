@@ -93,7 +93,7 @@ func New(cfg *config.Config) *chi.Mux {
 	bannerHandler := banner.NewHandler(sbClient)
 	articleHandler := article.NewHandler(sbClient)
 	paymentChannelHandler := payment_channel.NewHandler(sbClient)
-	appCategoryHandler := app_category.NewHandler(sbClient)
+	appCategoryHandler := app_category.NewHandler(sbClient, productHandler.GetService())
 	appMenuHandler := app_menu.NewHandler(sbClient, appCategoryHandler.GetService())
 	callbackHandler := callback.NewHandler(sbClient)
 

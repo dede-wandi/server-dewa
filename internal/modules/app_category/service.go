@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dede-wandi/server-dewa/internal/modules/product"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
 
@@ -46,15 +47,88 @@ type Service interface {
 }
 
 type categoryService struct {
-	sbClient *supabase.Client
-	mu       sync.RWMutex
-	fallback []AppCategory
+	sbClient    *supabase.Client
+	prodService product.Service
+	mu          sync.RWMutex
+	fallback    []AppCategory
 }
 
-func NewService(sbClient *supabase.Client) Service {
+func NewService(sbClient *supabase.Client, prodService product.Service) Service {
 	return &categoryService{
-		sbClient: sbClient,
-		fallback: []AppCategory{},
+		sbClient:    sbClient,
+		prodService: prodService,
+		fallback:    []AppCategory{},
+	}
+}
+
+func (s *categoryService) fetchProductsForCategory(categoryID, slug string) []*product.Product {
+	var results []*product.Product
+	seen := make(map[string]bool)
+
+	// 1. In-memory product service query (instant cache)
+	if s.prodService != nil {
+		if categoryID != "" {
+			for _, p := range s.prodService.ListProducts(categoryID, "", "", true) {
+				if !seen[p.ID] {
+					seen[p.ID] = true
+					results = append(results, p)
+				}
+			}
+		}
+		if slug != "" {
+			for _, p := range s.prodService.ListProducts(slug, "", "", true) {
+				if !seen[p.ID] {
+					seen[p.ID] = true
+					results = append(results, p)
+				}
+			}
+		}
+	}
+
+	// 2. Query Supabase DB directly if results are empty
+	if len(results) == 0 && s.sbClient != nil {
+		var orConditions []string
+		if categoryID != "" {
+			orConditions = append(orConditions, fmt.Sprintf("category_id.eq.%s", url.QueryEscape(categoryID)))
+		}
+		if slug != "" {
+			orConditions = append(orConditions, fmt.Sprintf("category.eq.%s", url.QueryEscape(slug)))
+		}
+
+		if len(orConditions) > 0 {
+			queryParams := fmt.Sprintf("or=(%s)&is_active=eq.true&status=neq.INACTIVE&order=price.asc,name.asc", strings.Join(orConditions, ","))
+			dbBytes, err := s.sbClient.GetDB("ppob_products", queryParams, "")
+			if err == nil && len(dbBytes) > 0 {
+				var dbProds []*product.Product
+				if err := json.Unmarshal(dbBytes, &dbProds); err == nil {
+					for _, p := range dbProds {
+						if !seen[p.ID] {
+							seen[p.ID] = true
+							results = append(results, p)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if results == nil {
+		results = []*product.Product{}
+	}
+	return results
+}
+
+func (s *categoryService) populateProductsForCategory(cat *AppCategory) {
+	if cat == nil {
+		return
+	}
+	// Fetch products directly for this category
+	cat.Products = s.fetchProductsForCategory(cat.ID, cat.Slug)
+
+	// Fetch products for all children
+	for i := range cat.Children {
+		child := &cat.Children[i]
+		child.Products = s.fetchProductsForCategory(child.ID, child.Slug)
 	}
 }
 
@@ -169,7 +243,11 @@ func (s *categoryService) GetActiveCategories(parentID string, level int, asTree
 	}
 
 	if asTree {
-		return buildTree(categories, parentID), nil
+		tree := buildTree(categories, parentID)
+		for i := range tree {
+			s.populateProductsForCategory(&tree[i])
+		}
+		return tree, nil
 	}
 
 	return categories, nil
@@ -209,13 +287,17 @@ func (s *categoryService) GetAllCategories(parentID string, level int, asTree bo
 	}
 
 	if asTree {
-		return buildTree(categories, parentID), nil
+		tree := buildTree(categories, parentID)
+		for i := range tree {
+			s.populateProductsForCategory(&tree[i])
+		}
+		return tree, nil
 	}
 
 	return categories, nil
 }
 
-// GetCategoryByID returns category by ID (with children)
+// GetCategoryByID returns category by ID (with children and products)
 func (s *categoryService) GetCategoryByID(id string) (*AppCategory, error) {
 	queryParams := fmt.Sprintf("id=eq.%s", url.QueryEscape(id))
 	respBytes, err := s.sbClient.GetDB("app_categories", queryParams, "")
@@ -231,6 +313,7 @@ func (s *categoryService) GetCategoryByID(id string) (*AppCategory, error) {
 					cat.Children = children
 				}
 			}
+			s.populateProductsForCategory(&cat)
 			return &cat, nil
 		}
 	}
@@ -248,6 +331,7 @@ func (s *categoryService) GetCategoryByID(id string) (*AppCategory, error) {
 				}
 			}
 			c.Children = children
+			s.populateProductsForCategory(&c)
 			return &c, nil
 		}
 	}
@@ -276,6 +360,7 @@ func (s *categoryService) GetCategoryByCodeOrSlug(identifier string) (*AppCatego
 					cat.Children = children
 				}
 			}
+			s.populateProductsForCategory(&cat)
 			return &cat, nil
 		}
 	}
@@ -291,6 +376,7 @@ func (s *categoryService) GetCategoryByCodeOrSlug(identifier string) (*AppCatego
 				}
 			}
 			c.Children = children
+			s.populateProductsForCategory(&c)
 			return &c, nil
 		}
 	}

@@ -1,6 +1,10 @@
 package app_category
 
-import "time"
+import (
+	"time"
+
+	"github.com/dede-wandi/server-dewa/internal/modules/product"
+)
 
 // AppCategory model kategori bertingkat (Tree Hierarchy)
 type AppCategory struct {
@@ -19,6 +23,7 @@ type AppCategory struct {
 	IsActive    bool                   `json:"is_active"`
 	Meta        map[string]interface{} `json:"meta,omitempty"`
 	Children    []AppCategory          `json:"children,omitempty"`
+	Products    []*product.Product     `json:"products,omitempty"`
 	CreatedAt   time.Time              `json:"created_at"`
 	UpdatedAt   time.Time              `json:"updated_at"`
 }

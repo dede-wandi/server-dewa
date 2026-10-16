@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dede-wandi/server-dewa/internal/modules/product"
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 	"github.com/go-chi/chi/v5"
 )
@@ -14,9 +15,9 @@ type Handler struct {
 	service Service
 }
 
-func NewHandler(sbClient *supabase.Client) *Handler {
+func NewHandler(sbClient *supabase.Client, prodService product.Service) *Handler {
 	return &Handler{
-		service: NewService(sbClient),
+		service: NewService(sbClient, prodService),
 	}
 }
 

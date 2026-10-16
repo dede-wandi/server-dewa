@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/dede-wandi/server-dewa/internal/modules/app_category"
+	"github.com/dede-wandi/server-dewa/internal/modules/product"
 )
 
 // AppMenu model menu layanan aplikasi (Home Screen, Quick Action, Sub-Menus)
@@ -16,6 +17,7 @@ type AppMenu struct {
 	Subtitle     string                    `json:"subtitle,omitempty"`
 	CategoryID   *string                   `json:"category_id,omitempty"`
 	Category     *app_category.AppCategory `json:"category,omitempty"`
+	Products     []*product.Product        `json:"products,omitempty"`
 	ActionType   string                    `json:"action_type"` // CATEGORY, ROUTE, WEBVIEW, DIALOG
 	TargetURL    string                    `json:"target_url"`
 	IconType     string                    `json:"icon_type"` // IONICONS, URL, SVG, EMOJI
