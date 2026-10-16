@@ -137,6 +137,9 @@ func New(cfg *config.Config) *chi.Mux {
 		// Dynamic payment channels & vendors (active & coming soon PG)
 		api.Mount("/payment-channels", paymentChannelHandler.PublicRoutes())
 
+		// Public Bill Inquiry (Cek tagihan pascabayar PDAM / PLN Pasca / BPJS)
+		api.Post("/bills/inquiry", transactionHandler.InquiryBill)
+
 		// DEDICATED SUPER ADMIN & ADMIN ENDPOINTS: Wajib login & role 'admin' / 'superadmin'
 		api.Route("/admin", func(adminRouter chi.Router) {
 			adminRouter.Use(middleware.RequireAuth(sbClient))

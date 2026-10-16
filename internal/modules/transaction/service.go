@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 // Service defines domain orchestration for digital product orders
 type Service interface {
 	CreateOrder(user *supabase.User, token string, req CreateOrderRequest) (*Order, error)
+	InquiryBill(user *supabase.User, req BillInquiryRequest) (*BillInquiryResponse, error)
 	GetOrderDetail(orderCode string) (*Order, error)
 	GetUserOrders(userID string) []*Order
 	GetAllOrders() []*Order
@@ -88,9 +91,30 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		orderCode = fmt.Sprintf("%s%04d", now.Format("060102150405"), (now.Nanosecond()/100000)%9000+1000)
 	}
 
-	// 3. Potong Saldo Atomik via WalletService
+	// 3. Tentukan Nominal Bayar & SKU Dispatch (Prepaid vs Postpaid)
+	chargedAmount := prod.Price
+	sku := strings.TrimSpace(prod.BuyerSKUCode)
+	if sku == "" {
+		sku = strings.TrimSpace(prod.Code)
+	}
+
+	if req.InquiryID != "" {
+		inq, exists := s.repo.GetInquiry(strings.TrimSpace(req.InquiryID))
+		if !exists || inq == nil {
+			return nil, errors.New("Sesi inquiry tagihan tidak ditemukan. Harap lakukan cek tagihan ulang.")
+		}
+		if time.Now().After(inq.ExpiresAt) {
+			return nil, errors.New("Sesi inquiry tagihan telah kedaluwarsa. Harap lakukan cek tagihan ulang.")
+		}
+		chargedAmount = inq.TotalAmount
+		if inq.PaymentSKU != "" {
+			sku = inq.PaymentSKU
+		}
+	}
+
+	// 4. Potong Saldo Atomik via WalletService
 	payReq := wallet.PayRequest{
-		Amount:      prod.Price,
+		Amount:      chargedAmount,
 		Category:    wallet.CategoryPayment,
 		Title:       prod.Name,
 		Description: target,
@@ -103,7 +127,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		return nil, fmt.Errorf("Gagal memproses pembayaran saldo: %w", err)
 	}
 
-	// 4. Buat Record Order
+	// 5. Buat Record Order
 	now := time.Now()
 	order := &Order{
 		ID:              fmt.Sprintf("ord-%d", now.UnixNano()),
@@ -114,23 +138,18 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		ProductName:     prod.Name,
 		ProductCategory: string(prod.Category),
 		TargetAccount:   target,
-		Price:           prod.Price,
+		Price:           chargedAmount,
 		PointsEarned:    prod.PointsReward,
 		Status:          StatusProcessing,
 		WalletTrxCode:   wTrx.TransactionCode,
 		CreatedAt:       now,
 	}
 
-	// 5. Eksekusi Pengiriman ke Provider / Switching PPOB
+	// 6. Eksekusi Pengiriman ke Provider / Switching PPOB
 	vMgr := vendor.GetGlobalManager()
 	vendorCode := strings.ToUpper(strings.TrimSpace(prod.VendorCode))
 	if vendorCode == "" {
-		vendorCode = "MANUAL" // Jika kosong, set ke MANUAL (tidak akan menembak DFLASH)
-	}
-
-	sku := strings.TrimSpace(prod.BuyerSKUCode)
-	if sku == "" {
-		sku = strings.TrimSpace(prod.Code)
+		vendorCode = "MANUAL"
 	}
 
 	vReq := &vendor.VendorOrderRequest{
@@ -139,7 +158,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		BuyerSKUCode: sku,
 		CustomerNo:   target,
 		RefID:        orderCode,
-		MaxPrice:     prod.CostPrice,
+		MaxPrice:     chargedAmount,
 		Testing:      false,
 	}
 
@@ -157,7 +176,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		}
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
-			Amount:          prod.Price,
+			Amount:          chargedAmount,
 			TargetUserID:    user.ID,
 			Reason:          refundReason,
 		}
@@ -185,7 +204,7 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		}
 		refundReq := wallet.RefundRequest{
 			TransactionCode: wTrx.TransactionCode,
-			Amount:          prod.Price,
+			Amount:          chargedAmount,
 			TargetUserID:    user.ID,
 			Reason:          refundReason,
 		}
@@ -430,4 +449,161 @@ func sanitizeErrorMessage(raw string) string {
 		return "Nomor tujuan tidak terdaftar atau tidak valid"
 	}
 	return "Pesanan sedang tidak dapat diproses oleh server"
+}
+
+// InquiryBill mengecek tagihan pascabayar ke server provider/switching PPOB
+func (s *service) InquiryBill(user *supabase.User, req BillInquiryRequest) (*BillInquiryResponse, error) {
+	prodCode := strings.ToUpper(strings.TrimSpace(req.ProductCode))
+	if prodCode == "" {
+		return nil, errors.New("kode produk (product_code) wajib diisi")
+	}
+
+	customerNo := strings.TrimSpace(req.CustomerNo)
+	if customerNo == "" {
+		return nil, errors.New("nomor pelanggan / ID pelanggan (customer_no) wajib diisi")
+	}
+
+	prod, err := s.productService.GetProduct(prodCode)
+	if err != nil {
+		return nil, err
+	}
+
+	if prod.Status != "ACTIVE" {
+		if strings.EqualFold(prod.Status, "GANGGUAN") {
+			return nil, fmt.Errorf("Produk %s saat ini sedang GANGGUAN dari provider. Silakan coba beberapa saat lagi.", prod.Name)
+		}
+		return nil, fmt.Errorf("Produk %s saat ini sedang %s.", prod.Name, prod.Status)
+	}
+
+	// Tentukan Inquiry SKU (kode cek)
+	inquirySKU := strings.TrimSpace(prod.InquirySKUCode)
+	paymentSKU := strings.TrimSpace(prod.BuyerSKUCode)
+	if paymentSKU == "" {
+		paymentSKU = prod.Code
+	}
+	if inquirySKU == "" {
+		if prod.Type == "POSTPAID" && strings.HasPrefix(strings.ToUpper(paymentSKU), "B") {
+			inquirySKU = "C" + paymentSKU[1:]
+		} else {
+			inquirySKU = paymentSKU
+		}
+	}
+
+	vendorCode := strings.ToUpper(strings.TrimSpace(prod.VendorCode))
+	if vendorCode == "" {
+		vendorCode = "DFLASH"
+	}
+
+	// Generate refID untuk inquiry
+	inqID := fmt.Sprintf("INQ-%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
+
+	vMgr := vendor.GetGlobalManager()
+	vReq := &vendor.VendorOrderRequest{
+		OrderID:      inqID,
+		VendorCode:   vendorCode,
+		BuyerSKUCode: inquirySKU,
+		CustomerNo:   customerNo,
+		RefID:        inqID,
+		MaxPrice:     0,
+		Testing:      false,
+	}
+
+	log.Printf("🔍 [INQUIRY DISPATCH] Mengirim Cek Tagihan %s (SKU=%s, Tujuan=%s)...", inqID, inquirySKU, customerNo)
+	vResp, err := vMgr.ProcessOrder(context.Background(), vReq)
+	if err != nil {
+		log.Printf("❌ [INQUIRY FAILED] %s: %v", inqID, err)
+		return nil, fmt.Errorf("Gagal melakukan pengecekan tagihan: %w", err)
+	}
+
+	if vResp.Status == "FAILED" {
+		msg := vResp.Message
+		if msg == "" {
+			msg = "Tagihan tidak ditemukan atau sudah lunas"
+		}
+		return nil, errors.New(msg)
+	}
+
+	// Parse teks atau map hasil respon inquiry
+	customerName, period, billAmount, desc := parseInquiryDetails(vResp.Message, vResp.RawResponse, customerNo)
+
+	adminFee := prod.Price
+	if adminFee <= 0 {
+		adminFee = 2500 // Default admin fee
+	}
+	totalAmount := billAmount + adminFee
+
+	inquiryResp := &BillInquiryResponse{
+		InquiryID:    inqID,
+		ProductCode:  prod.Code,
+		ProductName:  prod.Name,
+		VendorCode:   vendorCode,
+		InquirySKU:   inquirySKU,
+		PaymentSKU:   paymentSKU,
+		CustomerNo:   customerNo,
+		CustomerName: customerName,
+		Period:       period,
+		BillAmount:   billAmount,
+		AdminFee:     adminFee,
+		TotalAmount:  totalAmount,
+		Description:  desc,
+		RawResponse:  vResp.RawResponse,
+		CreatedAt:    time.Now(),
+		ExpiresAt:    time.Now().Add(15 * time.Minute),
+	}
+
+	s.repo.SaveInquiry(inquiryResp)
+	return inquiryResp, nil
+}
+
+func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo string) (customerName string, period string, billAmount float64, desc string) {
+	desc = msg
+	customerName = "PELANGGAN"
+
+	// Cek dari map jika ada
+	if raw != nil {
+		if n, ok := raw["nama"].(string); ok && n != "" {
+			customerName = n
+		} else if n, ok := raw["customer_name"].(string); ok && n != "" {
+			customerName = n
+		}
+		if p, ok := raw["periode"].(string); ok && p != "" {
+			period = p
+		}
+		if t, ok := raw["tagihan"].(float64); ok && t > 0 {
+			billAmount = t
+		} else if t, ok := raw["nominal"].(float64); ok && t > 0 {
+			billAmount = t
+		}
+	}
+
+	// Parsing regex dari pesan teks DFLASH / OtomaX
+	if msg != "" {
+		// Regex Nama: NAMA[:\s]+([A-Z0-9\s\.\,\/\-]+?)(?:,|\.|\s+TAG|\s+IDPEL|$)
+		reNama := regexp.MustCompile(`(?i)(?:NAMA\s*(?:PELANGGAN)?)\s*[:=]\s*([^,;.\n]+)`)
+		if matches := reNama.FindStringSubmatch(msg); len(matches) > 1 {
+			customerName = strings.TrimSpace(matches[1])
+		}
+
+		// Regex Tagihan: TAGIHAN[:\s]+(?:RP\.?|RP\s*)?([0-9\.]+)
+		reTag := regexp.MustCompile(`(?i)(?:TAGIHAN|TAG|POKOK|RP)\s*[:=]?\s*(?:RP\.?)?\s*([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{4,})`)
+		if matches := reTag.FindStringSubmatch(msg); len(matches) > 1 {
+			cleanNum := strings.ReplaceAll(matches[1], ".", "")
+			cleanNum = strings.ReplaceAll(cleanNum, ",", "")
+			if val, err := strconv.ParseFloat(cleanNum, 64); err == nil && val > 0 {
+				billAmount = val
+			}
+		}
+
+		// Regex Periode: PERIODE[:\s]+([A-Z0-9\s\-]+)
+		rePeriode := regexp.MustCompile(`(?i)(?:PERIODE|BLN|BULAN)\s*[:=]\s*([^,;.\n]+)`)
+		if matches := rePeriode.FindStringSubmatch(msg); len(matches) > 1 {
+			period = strings.TrimSpace(matches[1])
+		}
+	}
+
+	if period == "" {
+		period = time.Now().Format("January 2006")
+	}
+
+	return customerName, period, billAmount, desc
 }

@@ -42,7 +42,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/info", h.Info)
 	r.Post("/callback", h.Callback)
 
-	// User order endpoints (Require Auth)
+	// User order & inquiry endpoints (Require Auth)
+	r.Post("/inquiry", h.InquiryBill)
 	r.Post("/order", h.CreateOrder)
 	r.Get("/history", h.GetHistory)
 	r.Get("/{order_code}", h.GetOrderDetail)
@@ -54,6 +55,45 @@ func (h *Handler) Routes() chi.Router {
 	})
 
 	return r
+}
+
+// InquiryBill handles checking a postpaid bill (PDAM, PLN Pasca, BPJS, etc.)
+func (h *Handler) InquiryBill(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := middleware.GetUserFromContext(r.Context())
+
+	var req BillInquiryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Format payload JSON tidak valid",
+		})
+		return
+	}
+
+	log.Printf("🔍 [INQUIRY REQUEST] ProductCode=%s, CustomerNo=%s", req.ProductCode, req.CustomerNo)
+
+	inq, err := h.service.InquiryBill(user, req)
+	if err != nil {
+		log.Printf("❌ [INQUIRY FAILED] ProductCode=%s, CustomerNo=%s, Error=%v", req.ProductCode, req.CustomerNo, err)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	log.Printf("✅ [INQUIRY SUCCESS] ID=%s, Customer=%s, Bill=Rp %.0f, Admin=Rp %.0f, Total=Rp %.0f",
+		inq.InquiryID, inq.CustomerName, inq.BillAmount, inq.AdminFee, inq.TotalAmount)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Pengecekan tagihan berhasil",
+		"data":    inq,
+	})
 }
 
 // CreateOrder handles creating a new PPOB digital product order

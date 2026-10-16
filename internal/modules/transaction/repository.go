@@ -16,6 +16,8 @@ type Repository interface {
 	GetOrdersByUser(userID string) []*Order
 	GetAllOrders() []*Order
 	UpdateOrder(order *Order)
+	SaveInquiry(inq *BillInquiryResponse)
+	GetInquiry(id string) (*BillInquiryResponse, bool)
 }
 
 // MemoryRepository provides thread-safe order storage with O(1) indexed lookups and disk persistence
@@ -24,6 +26,7 @@ type MemoryRepository struct {
 	orders       map[string]*Order   // Key: OrderCode
 	ordersByUser map[string][]*Order // Key: UserID
 	allOrders    []*Order
+	inquiries    map[string]*BillInquiryResponse // Key: InquiryID
 }
 
 // NewMemoryRepository initializes repository and reloads persisted orders if available
@@ -32,6 +35,7 @@ func NewMemoryRepository() *MemoryRepository {
 		orders:       make(map[string]*Order, 64),
 		ordersByUser: make(map[string][]*Order, 16),
 		allOrders:    make([]*Order, 0, 64),
+		inquiries:    make(map[string]*BillInquiryResponse, 32),
 	}
 	repo.loadFromFile()
 	return repo
@@ -130,4 +134,20 @@ func (r *MemoryRepository) UpdateOrder(order *Order) {
 	code := strings.ToUpper(strings.TrimSpace(order.OrderCode))
 	r.orders[code] = order
 	r.saveToFile()
+}
+
+func (r *MemoryRepository) SaveInquiry(inq *BillInquiryResponse) {
+	if inq == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.inquiries[inq.InquiryID] = inq
+}
+
+func (r *MemoryRepository) GetInquiry(id string) (*BillInquiryResponse, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	inq, ok := r.inquiries[id]
+	return inq, ok
 }

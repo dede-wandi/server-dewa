@@ -1026,7 +1026,114 @@
           "name": "Transactions",
           "item": [
             {
-              "name": "Create Order",
+              "name": "Check Bill Inquiry (Cek Tagihan PDAM / PLN Pasca / BPJS)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{auth_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"product_code\": \"PDAM-BELU\",\n  \"customer_no\": \"1234567890\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/inquiry",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "inquiry"
+                  ]
+                },
+                "description": "Cek tagihan pascabayar (PDAM, PLN Pasca, BPJS, Telkom). Mengirimkan inquiry_sku_code (contoh: CPDAM177) ke vendor switching. Mengembalikan nama pelanggan, periode, tagihan pokok, biaya admin, total bayar, serta inquiry_id yang berlaku selama 15 menit."
+              }
+            },
+            {
+              "name": "Public Bill Inquiry (Cek Tagihan Tanpa Login)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"product_code\": \"PDAM-BELU\",\n  \"customer_no\": \"1234567890\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/bills/inquiry",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "bills",
+                    "inquiry"
+                  ]
+                },
+                "description": "Endpoint publik untuk cek tagihan pascabayar tanpa memerlukan autentikasi Bearer token."
+              }
+            },
+            {
+              "name": "Pay Postpaid Bill (Bayar Tagihan dengan Inquiry ID)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{auth_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"product_code\": \"PDAM-BELU\",\n  \"target_account\": \"1234567890\",\n  \"inquiry_id\": \"INQ-261016174501\",\n  \"pin\": \"123456\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/transactions/order",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "transactions",
+                    "order"
+                  ]
+                },
+                "description": "Membayar tagihan pascabayar dengan menyertakan inquiry_id hasil dari Cek Tagihan. Saldo didebit sejumlah total_amount (tagihan + admin fee) dan vendor mengeksekusi payment SKU (contoh: BPDAM177)."
+              }
+            },
+            {
+              "name": "Create Order (Prabayar / Pulsa / Data / Game)",
               "request": {
                 "auth": {
                   "type": "bearer",
