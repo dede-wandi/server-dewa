@@ -4,6 +4,7 @@ package admin
 type UserListItem struct {
 	UserID    string  `json:"user_id"`
 	UserEmail string  `json:"user_email"`
+	FullName  string  `json:"full_name,omitempty"`
 	Role      string  `json:"role"`
 	RoleName  string  `json:"role_name"`
 	Category  string  `json:"category"`

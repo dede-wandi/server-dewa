@@ -77,10 +77,30 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 					continue
 				}
 
+				var fullName string
+				if um, ok := u["user_metadata"].(map[string]interface{}); ok && len(um) > 0 {
+					if fn, ok := um["full_name"].(string); ok && fn != "" {
+						fullName = fn
+					} else if dn, ok := um["display_name"].(string); ok && dn != "" {
+						fullName = dn
+					} else if nm, ok := um["name"].(string); ok && nm != "" {
+						fullName = nm
+					}
+				}
+				if fullName == "" {
+					if fn, ok := u["full_name"].(string); ok && fn != "" {
+						fullName = fn
+					} else if dn, ok := u["display_name"].(string); ok && dn != "" {
+						fullName = dn
+					} else if nm, ok := u["name"].(string); ok && nm != "" {
+						fullName = nm
+					}
+				}
+
 				if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
 					continue
 				}
-				if search != "" && !strings.Contains(strings.ToLower(userEmail), search) {
+				if search != "" && !strings.Contains(strings.ToLower(userEmail), search) && !strings.Contains(strings.ToLower(fullName), search) {
 					continue
 				}
 
@@ -102,6 +122,7 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 				filtered = append(filtered, UserListItem{
 					UserID:    userID,
 					UserEmail: userEmail,
+					FullName:  fullName,
 					Role:      string(def.Role),
 					RoleName:  def.Name,
 					Category:  string(def.Category),
@@ -144,10 +165,21 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 					continue
 				}
 
+				var fullName string
+				if len(u.UserMetadata) > 0 {
+					if fn, ok := u.UserMetadata["full_name"].(string); ok && fn != "" {
+						fullName = fn
+					} else if dn, ok := u.UserMetadata["display_name"].(string); ok && dn != "" {
+						fullName = dn
+					} else if nm, ok := u.UserMetadata["name"].(string); ok && nm != "" {
+						fullName = nm
+					}
+				}
+
 				if roleFilter != "" && !strings.EqualFold(string(def.Role), roleFilter) {
 					continue
 				}
-				if search != "" && !strings.Contains(strings.ToLower(u.Email), search) {
+				if search != "" && !strings.Contains(strings.ToLower(u.Email), search) && !strings.Contains(strings.ToLower(fullName), search) {
 					continue
 				}
 
@@ -172,6 +204,7 @@ func (s *adminService) ListUsers(roleFilter, search, token string) ([]UserListIt
 				list = append(list, UserListItem{
 					UserID:    u.ID,
 					UserEmail: u.Email,
+					FullName:  fullName,
 					Role:      string(def.Role),
 					RoleName:  def.Name,
 					Category:  string(def.Category),
