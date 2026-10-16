@@ -562,13 +562,13 @@ func (s *service) InquiryBill(user *supabase.User, req BillInquiryRequest) (*Bil
 		return nil, errors.New(msg)
 	}
 
-	// Parse teks atau map hasil respon inquiry
-	customerName, period, billAmount, desc := parseInquiryDetails(finalMessage, finalRaw, customerNo)
-
 	adminFee := prod.Price
 	if adminFee <= 0 {
-		adminFee = 2500 // Default admin fee
+		adminFee = 2500 // Default admin fee dari panel superadmin
 	}
+
+	// Parse teks atau map hasil respon inquiry
+	customerName, period, periodCount, meterInfo, billAmount, desc, details := parseInquiryDetails(finalMessage, finalRaw, customerNo, adminFee)
 	totalAmount := billAmount + adminFee
 
 	inquiryResp := &BillInquiryResponse{
@@ -581,10 +581,13 @@ func (s *service) InquiryBill(user *supabase.User, req BillInquiryRequest) (*Bil
 		CustomerNo:   customerNo,
 		CustomerName: customerName,
 		Period:       period,
+		PeriodCount:  periodCount,
+		MeterInfo:    meterInfo,
 		BillAmount:   billAmount,
 		AdminFee:     adminFee,
 		TotalAmount:  totalAmount,
 		Description:  desc,
+		Details:      details,
 		RawResponse:  finalRaw,
 		CreatedAt:    time.Now(),
 		ExpiresAt:    time.Now().Add(15 * time.Minute),
@@ -594,9 +597,10 @@ func (s *service) InquiryBill(user *supabase.User, req BillInquiryRequest) (*Bil
 	return inquiryResp, nil
 }
 
-func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo string) (customerName string, period string, billAmount float64, desc string) {
+func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo string, adminFee float64) (customerName string, period string, periodCount int, meterInfo string, billAmount float64, desc string, details []InquiryDetailItem) {
 	desc = msg
 	customerName = "PELANGGAN"
+	periodCount = 1
 
 	// Cek dari map jika ada
 	if raw != nil {
@@ -608,7 +612,9 @@ func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo stri
 		if p, ok := raw["periode"].(string); ok && p != "" {
 			period = p
 		}
-		if t, ok := raw["tagihan"].(float64); ok && t > 0 {
+		if t, ok := raw["total"].(float64); ok && t > 0 {
+			billAmount = t
+		} else if t, ok := raw["tagihan"].(float64); ok && t > 0 {
 			billAmount = t
 		} else if t, ok := raw["nominal"].(float64); ok && t > 0 {
 			billAmount = t
@@ -627,9 +633,36 @@ func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo stri
 			}
 		}
 
-		// 2. Regex Tagihan Pokok: TAG:1344540/ atau TAGIHAN: 45000
-		reTag := regexp.MustCompile(`(?i)(?:TAGIHAN|TAG|POKOK)\s*[:=]?\s*(?:RP\.?\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{3,})`)
-		if matches := reTag.FindStringSubmatch(msg); len(matches) > 1 {
+		// 2. Regex Periode Bulan: BLN:APR 26,MEI 26,SEP 26/ atau PERIODE: OKTOBER 2026
+		rePeriode := regexp.MustCompile(`(?i)(?:PERIODE|BLN|BULAN)\s*[:=]\s*([^;.\n/]+)`)
+		if matches := rePeriode.FindStringSubmatch(msg); len(matches) > 1 {
+			period = strings.TrimSpace(matches[1])
+		}
+
+		// 3. Regex Jumlah Bulan (JBLN)
+		reJbln := regexp.MustCompile(`(?i)(?:JBLN|JML\s*BLN|LEMBAR|LEMBER)\s*[:=]\s*([0-9]+)`)
+		if matches := reJbln.FindStringSubmatch(msg); len(matches) > 1 {
+			if cnt, err := strconv.Atoi(matches[1]); err == nil && cnt > 0 {
+				periodCount = cnt
+			}
+		}
+		// Jika di teks JBLN tertulis 1 tapi di Periode ada koma (misal "APR 26,MEI 26,SEP 26" = 3 bulan)
+		if strings.Contains(period, ",") {
+			commaCount := strings.Count(period, ",") + 1
+			if commaCount > periodCount {
+				periodCount = commaCount
+			}
+		}
+
+		// 4. Regex Stand Meter (SM)
+		reSM := regexp.MustCompile(`(?i)(?:SM|METER|STAND)\s*[:=]\s*([^/;\n]+)`)
+		if matches := reSM.FindStringSubmatch(msg); len(matches) > 1 {
+			meterInfo = strings.TrimSpace(matches[1])
+		}
+
+		// 5. Regex Tagihan: PRIORITASKAN NILAI "TOTAL" dari vendor
+		reTotal := regexp.MustCompile(`(?i)(?:TOTAL|JUMLAH|JML\s*TAG)\s*[:=]?\s*(?:RP\.?\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{3,})`)
+		if matches := reTotal.FindStringSubmatch(msg); len(matches) > 1 {
 			cleanNum := strings.ReplaceAll(matches[1], ".", "")
 			cleanNum = strings.ReplaceAll(cleanNum, ",", "")
 			if val, err := strconv.ParseFloat(cleanNum, 64); err == nil && val > 0 {
@@ -637,10 +670,10 @@ func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo stri
 			}
 		}
 
-		// Jika TAG belum dapat, coba dari TOTAL
+		// Fallback jika TOTAL tidak ada: coba dari TAGIHAN / TAG / POKOK
 		if billAmount <= 0 {
-			reTotal := regexp.MustCompile(`(?i)(?:TOTAL|JUMLAH|RP)\s*[:=]?\s*(?:RP\.?\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{3,})`)
-			if matches := reTotal.FindStringSubmatch(msg); len(matches) > 1 {
+			reTag := regexp.MustCompile(`(?i)(?:TAGIHAN|TAG|POKOK)\s*[:=]?\s*(?:RP\.?\s*)?([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{3,})`)
+			if matches := reTag.FindStringSubmatch(msg); len(matches) > 1 {
 				cleanNum := strings.ReplaceAll(matches[1], ".", "")
 				cleanNum = strings.ReplaceAll(cleanNum, ",", "")
 				if val, err := strconv.ParseFloat(cleanNum, 64); err == nil && val > 0 {
@@ -648,17 +681,50 @@ func parseInquiryDetails(msg string, raw map[string]interface{}, customerNo stri
 				}
 			}
 		}
-
-		// 3. Regex Periode: BLN:APR 26,MEI 26,SEP 26/ atau PERIODE: OKTOBER 2026
-		rePeriode := regexp.MustCompile(`(?i)(?:PERIODE|BLN|BULAN)\s*[:=]\s*([^;.\n/]+)`)
-		if matches := rePeriode.FindStringSubmatch(msg); len(matches) > 1 {
-			period = strings.TrimSpace(matches[1])
-		}
 	}
 
 	if period == "" {
 		period = time.Now().Format("January 2006")
 	}
 
-	return customerName, period, billAmount, desc
+	// 6. Buat Array Terstruktur Details agar Frontend Mobile App Sangat Mudah Mengambilnya
+	details = []InquiryDetailItem{
+		{Label: "Nama Pelanggan", Value: customerName},
+		{Label: "ID Pelanggan", Value: customerNo},
+		{Label: "Bulan / Periode", Value: period},
+		{Label: "Jumlah Bulan", Value: fmt.Sprintf("%d Bulan", periodCount)},
+	}
+	if meterInfo != "" {
+		details = append(details, InquiryDetailItem{Label: "Stand Meter", Value: meterInfo})
+	}
+	details = append(details,
+		InquiryDetailItem{Label: "Total Tagihan", Value: fmt.Sprintf("Rp %s", formatRupiah(billAmount))},
+		InquiryDetailItem{Label: "Biaya Admin", Value: fmt.Sprintf("Rp %s", formatRupiah(adminFee))},
+		InquiryDetailItem{Label: "Total Bayar", Value: fmt.Sprintf("Rp %s", formatRupiah(billAmount+adminFee))},
+	)
+
+	return customerName, period, periodCount, meterInfo, billAmount, desc, details
+}
+
+func formatRupiah(amount float64) string {
+	s := fmt.Sprintf("%.0f", amount)
+	n := len(s)
+	if n <= 3 {
+		return s
+	}
+	var res []byte
+	rem := n % 3
+	if rem > 0 {
+		res = append(res, s[:rem]...)
+		if n > rem {
+			res = append(res, '.')
+		}
+	}
+	for i := rem; i < n; i += 3 {
+		res = append(res, s[i:i+3]...)
+		if i+3 < n {
+			res = append(res, '.')
+		}
+	}
+	return string(res)
 }

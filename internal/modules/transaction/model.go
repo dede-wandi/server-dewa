@@ -47,21 +47,30 @@ type BillInquiryRequest struct {
 	CustomerNo  string `json:"customer_no"`  // ID Pelanggan / Nomor Meteran
 }
 
+// InquiryDetailItem represents an individual line item of the bill inquiry
+type InquiryDetailItem struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
 // BillInquiryResponse rincian tagihan dari vendor untuk ditampilkan ke pelanggan
 type BillInquiryResponse struct {
 	InquiryID    string                 `json:"inquiry_id"`              // e.g. INQ-261016-12345
-	ProductCode  string                 `json:"product_code"`            // e.g. PDAM-BELU
-	ProductName  string                 `json:"product_name"`            // e.g. PDAM KAB. BELU
+	ProductCode  string                 `json:"product_code"`            // e.g. PDAM-BELU / BPDAM71
+	ProductName  string                 `json:"product_name"`            // e.g. PDAM KAB. SUKABUMI
 	VendorCode   string                 `json:"vendor_code"`             // e.g. DFLASH
-	InquirySKU   string                 `json:"inquiry_sku"`             // e.g. CPDAM177
-	PaymentSKU   string                 `json:"payment_sku"`             // e.g. BPDAM177
-	CustomerNo   string                 `json:"customer_no"`             // e.g. 1234567890
-	CustomerName string                 `json:"customer_name"`           // e.g. BUDI SANTOSO
-	Period       string                 `json:"period,omitempty"`        // e.g. OKTOBER 2026
-	BillAmount   float64                `json:"bill_amount"`             // Tagihan pokok dari vendor
-	AdminFee     float64                `json:"admin_fee"`               // Biaya admin DewaCell
+	InquirySKU   string                 `json:"inquiry_sku"`             // e.g. CPDAM71
+	PaymentSKU   string                 `json:"payment_sku"`             // e.g. BPDAM71
+	CustomerNo   string                 `json:"customer_no"`             // e.g. 01030040238
+	CustomerName string                 `json:"customer_name"`           // e.g. Dewi Lestari
+	Period       string                 `json:"period,omitempty"`        // e.g. APR 26, MEI 26, SEP 26
+	PeriodCount  int                    `json:"period_count,omitempty"`  // e.g. 3 (JBLN)
+	MeterInfo    string                 `json:"meter_info,omitempty"`    // e.g. 1075-1318 (Stand Meter)
+	BillAmount   float64                `json:"bill_amount"`             // Nilai TOTAL tagihan resmi PDAM dari vendor
+	AdminFee     float64                `json:"admin_fee"`               // Biaya admin DewaCell dari panel superadmin
 	TotalAmount  float64                `json:"total_amount"`            // Total bayar = BillAmount + AdminFee
 	Description  string                 `json:"description,omitempty"`   // Keterangan / rincian lembar
+	Details      []InquiryDetailItem    `json:"details"`                 // Array terstruktur agar mudah di-render di aplikasi
 	RawResponse  map[string]interface{} `json:"raw_response,omitempty"`  // Raw respons vendor
 	CreatedAt    time.Time              `json:"created_at"`
 	ExpiresAt    time.Time              `json:"expires_at"`              // Kedaluwarsa dalam 15 menit
