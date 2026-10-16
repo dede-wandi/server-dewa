@@ -98,6 +98,8 @@ func (h *Handler) Routes() chi.Router {
 	// Vendor Balance & Monitoring (DFLASH / Generic)
 	r.Get("/vendor/balance", h.CheckVendorBalance)
 	r.Get("/vendor/{vendor}/balance", h.CheckVendorBalance)
+	r.Get("/vendor/status", h.CheckVendorStatus)
+	r.Get("/vendor/{vendor}/status", h.CheckVendorStatus)
 
 	return r
 }
@@ -604,3 +606,46 @@ func (h *Handler) CheckVendorBalance(w http.ResponseWriter, r *http.Request) {
 		"data":    bal,
 	})
 }
+
+// CheckVendorStatus checks transaction status on external vendor servers (e.g. DFLASH) using ref_id
+func (h *Handler) CheckVendorStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	vendorCode := chi.URLParam(r, "vendor")
+	if vendorCode == "" {
+		vendorCode = r.URL.Query().Get("vendor")
+		if vendorCode == "" {
+			vendorCode = "DFLASH"
+		}
+	}
+
+	refID := r.URL.Query().Get("ref_id")
+	if refID == "" {
+		refID = r.URL.Query().Get("refid")
+	}
+	if refID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Parameter ref_id wajib diisi (contoh: ?ref_id=TRX123456)",
+		})
+		return
+	}
+
+	res, err := vendor.GetGlobalManager().CheckVendorStatus(r.Context(), vendorCode, refID)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Status transaksi vendor berhasil diperiksa",
+		"data":    res,
+	})
+}
+

@@ -101,3 +101,13 @@ func (m *VendorManager) CheckVendorBalance(ctx context.Context, vendorCode strin
 	}
 	return adapter.CheckBalance(ctx)
 }
+
+// CheckVendorStatus mengecek status transaksi ke server vendor berdasarkan refID
+func (m *VendorManager) CheckVendorStatus(ctx context.Context, vendorCode, refID string) (*VendorOrderResponse, error) {
+	adapter, err := m.GetAdapter(vendorCode)
+	if err != nil {
+		return nil, err
+	}
+	return adapter.CheckStatus(ctx, refID)
+}
+

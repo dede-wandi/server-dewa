@@ -55,6 +55,31 @@
       "key": "menu_id",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "dflash_member_id",
+      "value": "H2H02494",
+      "type": "string"
+    },
+    {
+      "key": "dflash_pin",
+      "value": "112211",
+      "type": "string"
+    },
+    {
+      "key": "dflash_password",
+      "value": "DUNhil00@#",
+      "type": "string"
+    },
+    {
+      "key": "dflash_center_url",
+      "value": "http://45.76.183.72:666",
+      "type": "string"
+    },
+    {
+      "key": "ref_id",
+      "value": "TRX_SAMPLE_123456",
+      "type": "string"
     }
   ],
   "item": [
@@ -1716,6 +1741,154 @@
                   ]
                 },
                 "description": "Mengecek sisa saldo deposit agen pada server vendor DFLASH (Format: http://ip_dflash/balance?memberID=[memberid]&sign=[sign])."
+              }
+            },
+            {
+              "name": "Direct Check Balance ke Center DFLASH (OtomaX Center)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "exec": [
+                      "// Generate Signature OtomaX DFLASH Otomatis via CryptoJS",
+                      "var memberID = pm.collectionVariables.get(\"dflash_member_id\") || \"H2H02494\";",
+                      "var pin = pm.collectionVariables.get(\"dflash_pin\") || \"112211\";",
+                      "var password = pm.collectionVariables.get(\"dflash_password\") || \"DUNhil00@#\";",
+                      "var raw = \"OtomaX|\" + memberID + \"||||\" + pin + \"|\" + password;",
+                      "var hash = CryptoJS.SHA1(raw);",
+                      "var base64 = CryptoJS.enc.Base64.stringify(hash);",
+                      "var sign = base64.replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=/g, \"\");",
+                      "pm.variables.set(\"dflash_calculated_sign\", sign);",
+                      "console.log(\"⚡ DFLASH Sign generated:\", sign);"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{dflash_center_url}}/balance?memberID={{dflash_member_id}}&sign={{dflash_calculated_sign}}",
+                  "host": [
+                    "{{dflash_center_url}}"
+                  ],
+                  "path": [
+                    "balance"
+                  ],
+                  "query": [
+                    {
+                      "key": "memberID",
+                      "value": "{{dflash_member_id}}"
+                    },
+                    {
+                      "key": "sign",
+                      "value": "{{dflash_calculated_sign}}"
+                    }
+                  ]
+                },
+                "description": "Menembak langsung ke Center IP DFLASH (http://45.76.183.72:666). Script Pre-request otomatis menghitung SHA1 Base64URL signature OtomaX. Catatan: IP pengirim harus terdaftar di whitelist DFLASH."
+              }
+            },
+            {
+              "name": "Check Vendor Transaction Status (DFLASH)",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/admin/vendor/status?vendor=DFLASH&ref_id={{ref_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "admin",
+                    "vendor",
+                    "status"
+                  ],
+                  "query": [
+                    {
+                      "key": "vendor",
+                      "value": "DFLASH"
+                    },
+                    {
+                      "key": "ref_id",
+                      "value": "{{ref_id}}"
+                    }
+                  ]
+                },
+                "description": "Mengecek status transaksi terbaru ke server vendor DFLASH berdasarkan ref_id internal (misal: pesanan pending yang ingin dicek ulang)."
+              }
+            },
+            {
+              "name": "Direct Check Transaction Status ke Center DFLASH (OtomaX Center)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "exec": [
+                      "// Generate Signature OtomaX DFLASH Cek Status Transaksi Otomatis",
+                      "var memberID = pm.collectionVariables.get(\"dflash_member_id\") || \"H2H02494\";",
+                      "var pin = pm.collectionVariables.get(\"dflash_pin\") || \"112211\";",
+                      "var password = pm.collectionVariables.get(\"dflash_password\") || \"DUNhil00@#\";",
+                      "var refID = pm.variables.get(\"ref_id\") || pm.collectionVariables.get(\"ref_id\") || \"TRX_SAMPLE_123456\";",
+                      "",
+                      "// Rumus resmi Check Status OtomaX: OtomaX|memberID|||refID|pin|password",
+                      "var raw = \"OtomaX|\" + memberID + \"|||\" + refID + \"|\" + pin + \"|\" + password;",
+                      "var hash = CryptoJS.SHA1(raw);",
+                      "var base64 = CryptoJS.enc.Base64.stringify(hash);",
+                      "var sign = base64.replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=/g, \"\");",
+                      "pm.variables.set(\"dflash_check_sign\", sign);",
+                      "console.log(\"⚡ DFLASH Check Status Sign generated:\", sign);"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{dflash_center_url}}/check?memberID={{dflash_member_id}}&refID={{ref_id}}&sign={{dflash_check_sign}}",
+                  "host": [
+                    "{{dflash_center_url}}"
+                  ],
+                  "path": [
+                    "check"
+                  ],
+                  "query": [
+                    {
+                      "key": "memberID",
+                      "value": "{{dflash_member_id}}"
+                    },
+                    {
+                      "key": "refID",
+                      "value": "{{ref_id}}"
+                    },
+                    {
+                      "key": "sign",
+                      "value": "{{dflash_check_sign}}"
+                    }
+                  ]
+                },
+                "description": "Menembak langsung ke Center IP DFLASH (/check?memberID=...&refID=...&sign=...) untuk cek status transaksi. Pre-request Script otomatis menghitung SHA1 Base64URL signature OtomaX. Catatan: IP pengirim harus terdaftar di whitelist DFLASH."
               }
             }
           ]
