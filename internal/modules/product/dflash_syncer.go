@@ -339,26 +339,24 @@ func (s *DFlashSyncer) SyncCatalog(sbClient *supabase.Client, repo Repository) (
 		Changes:      make([]SKUChangeItem, 0),
 	}
 
-	// 3. Bandingkan dan update produk ber-vendor DFLASH
+	// 3. Bandingkan dan update produk yang terdaftar di DFLASH
 	for _, p := range dbProducts {
-		vendor := strings.ToUpper(strings.TrimSpace(p.VendorCode))
-		if vendor != "DFLASH" {
-			continue // Hanya sinkronkan produk DFLASH
-		}
-
 		sku := strings.ToUpper(strings.TrimSpace(p.BuyerSKUCode))
 		if sku == "" {
 			sku = strings.ToUpper(strings.TrimSpace(p.Code))
 		}
 
 		dItem, exists := dflashItems[sku]
-		if !exists {
-			if strings.Contains(sku, "-") {
-				parts := strings.Split(sku, "-")
-				dItem, exists = dflashItems[parts[len(parts)-1]]
-			}
+		if !exists && strings.Contains(sku, "-") {
+			parts := strings.Split(sku, "-")
+			dItem, exists = dflashItems[parts[len(parts)-1]]
+		}
+		if !exists && p.Code != "" {
+			codeUpper := strings.ToUpper(strings.TrimSpace(p.Code))
+			dItem, exists = dflashItems[codeUpper]
 		}
 
+		// Jika SKU tidak ditemukan dalam laporan DFLASH, lewati produk ini
 		if !exists {
 			continue
 		}
@@ -366,13 +364,18 @@ func (s *DFlashSyncer) SyncCatalog(sbClient *supabase.Client, repo Repository) (
 		// Evaluasi perubahan status & harga
 		statusChanged := false
 		priceChanged := false
+		vendorChanged := false
+		if strings.ToUpper(strings.TrimSpace(p.VendorCode)) != "DFLASH" {
+			vendorChanged = true
+		}
+
 		newStatus := strings.ToUpper(strings.TrimSpace(p.Status))
 		newCostPrice := p.CostPrice
 		newPrice := p.Price
 		newIsActive := p.IsActive
 
 		// Aturan Status:
-		if strings.EqualFold(dItem.Status, "Gangguan") {
+		if strings.Contains(strings.ToLower(dItem.Status), "gangguan") {
 			result.GangguanCount++
 			if newStatus != "INACTIVE" && newStatus != "GANGGUAN" {
 				newStatus = "GANGGUAN"
@@ -380,7 +383,7 @@ func (s *DFlashSyncer) SyncCatalog(sbClient *supabase.Client, repo Repository) (
 				statusChanged = true
 				result.StatusUpdated++
 			}
-		} else if strings.EqualFold(dItem.Status, "Open") {
+		} else {
 			result.ActiveCount++
 			if newStatus == "GANGGUAN" {
 				newStatus = "ACTIVE"
@@ -402,36 +405,38 @@ func (s *DFlashSyncer) SyncCatalog(sbClient *supabase.Client, repo Repository) (
 			result.PriceUpdated++
 		}
 
-		// Jika ada perubahan, simpan patch ke Supabase dan catat ke array changes
-		if statusChanged || priceChanged {
-			changeType := "STATUS"
-			if statusChanged && priceChanged {
-				changeType = "STATUS_AND_PRICE"
-			} else if priceChanged {
-				changeType = "PRICE"
-			}
+		// Jika ada perubahan status, harga, atau vendor_code
+		if statusChanged || priceChanged || vendorChanged {
+			if statusChanged || priceChanged {
+				changeType := "STATUS"
+				if statusChanged && priceChanged {
+					changeType = "STATUS_AND_PRICE"
+				} else if priceChanged {
+					changeType = "PRICE"
+				}
 
-			changeItem := SKUChangeItem{
-				SKU:       sku,
-				Name:      p.Name,
-				Type:      changeType,
-				OldStatus: p.Status,
-				NewStatus: newStatus,
-				OldCost:   p.CostPrice,
-				NewCost:   newCostPrice,
-				OldPrice:  p.Price,
-				NewPrice:  newPrice,
+				changeItem := SKUChangeItem{
+					SKU:       sku,
+					Name:      p.Name,
+					Type:      changeType,
+					OldStatus: p.Status,
+					NewStatus: newStatus,
+					OldCost:   p.CostPrice,
+					NewCost:   newCostPrice,
+					OldPrice:  p.Price,
+					NewPrice:  newPrice,
+				}
+				result.Changes = append(result.Changes, changeItem)
 			}
-			result.Changes = append(result.Changes, changeItem)
 
 			if sbClient != nil {
 				patchData := map[string]interface{}{
-					"status":         newStatus,
-					"is_active":      newIsActive,
-					"cost_price":     newCostPrice,
-					"original_price": newCostPrice,
-					"price":          newPrice,
-					"updated_at":     time.Now(),
+					"status":      newStatus,
+					"is_active":   newIsActive,
+					"cost_price":  newCostPrice,
+					"price":       newPrice,
+					"vendor_code": "DFLASH",
+					"updated_at":  time.Now(),
 				}
 
 				filter := fmt.Sprintf("id=eq.%s", p.ID)
