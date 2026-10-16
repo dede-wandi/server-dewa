@@ -43,7 +43,8 @@ type Product struct {
 // CreateProductRequest payload pembuatan produk baru
 type CreateProductRequest struct {
 	CategoryID     string  `json:"category_id"`              // WAJIB: Produk belum bisa dibuat jika kategori tidak ada
-	VendorCode     string  `json:"vendor_code,omitempty"`    // e.g. DIGIFLAZZ, IAK, SERPUL, MANUAL (default: MANUAL)
+	VendorCode     string  `json:"vendor_code,omitempty"`    // e.g. DFLASH, MANUAL
+	Vendor         string  `json:"vendor,omitempty"`         // Fallback alias dari frontend
 	BuyerSKUCode   string  `json:"buyer_sku_code,omitempty"` // e.g. FIBP14 / BPDAM177
 	InquirySKUCode string  `json:"inquiry_sku_code,omitempty"`// e.g. CPDAM177 (khusus pascabayar jika beda dari buyer_sku_code)
 	Code           string  `json:"code,omitempty"`           // Kode unik (opsional, jika kosong diisi buyer_sku_code)
@@ -64,6 +65,7 @@ type CreateProductRequest struct {
 type UpdateProductRequest struct {
 	CategoryID     *string  `json:"category_id,omitempty"`
 	VendorCode     *string  `json:"vendor_code,omitempty"`
+	Vendor         *string  `json:"vendor,omitempty"`
 	BuyerSKUCode   *string  `json:"buyer_sku_code,omitempty"`
 	InquirySKUCode *string  `json:"inquiry_sku_code,omitempty"`
 	Code           *string  `json:"code,omitempty"`

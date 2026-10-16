@@ -193,8 +193,11 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 	}
 
 	vendorCode := strings.ToUpper(strings.TrimSpace(req.VendorCode))
+	if vendorCode == "" && strings.TrimSpace(req.Vendor) != "" {
+		vendorCode = strings.ToUpper(strings.TrimSpace(req.Vendor))
+	}
 	if vendorCode == "" {
-		vendorCode = "MANUAL"
+		vendorCode = "DFLASH"
 	}
 
 	// 4. Validasi OOP Vendor SKU:
@@ -372,8 +375,10 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 		}
 		updatePayload["category_id"] = catID
 	}
-	if req.VendorCode != nil {
-		updatePayload["vendor_code"] = strings.ToUpper(*req.VendorCode)
+	if req.VendorCode != nil && strings.TrimSpace(*req.VendorCode) != "" {
+		updatePayload["vendor_code"] = strings.ToUpper(strings.TrimSpace(*req.VendorCode))
+	} else if req.Vendor != nil && strings.TrimSpace(*req.Vendor) != "" {
+		updatePayload["vendor_code"] = strings.ToUpper(strings.TrimSpace(*req.Vendor))
 	}
 	if req.BuyerSKUCode != nil {
 		updatePayload["buyer_sku_code"] = *req.BuyerSKUCode
