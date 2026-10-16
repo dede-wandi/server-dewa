@@ -98,18 +98,27 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		sku = strings.TrimSpace(prod.Code)
 	}
 
-	if req.InquiryID != "" {
-		inq, exists := s.repo.GetInquiry(strings.TrimSpace(req.InquiryID))
+	if strings.TrimSpace(req.InquiryID) != "" {
+		inqID := strings.TrimSpace(req.InquiryID)
+		inq, exists := s.repo.GetInquiry(inqID)
 		if !exists || inq == nil {
-			return nil, errors.New("Sesi inquiry tagihan tidak ditemukan. Harap lakukan cek tagihan ulang.")
+			return nil, errors.New("Sesi inquiry tagihan tidak ditemukan atau sudah pernah dibayar. Harap lakukan cek tagihan ulang.")
 		}
 		if time.Now().After(inq.ExpiresAt) {
-			return nil, errors.New("Sesi inquiry tagihan telah kedaluwarsa. Harap lakukan cek tagihan ulang.")
+			s.repo.DeleteInquiry(inqID)
+			return nil, errors.New("Sesi inquiry tagihan telah kedaluwarsa (berlaku 15 menit). Harap lakukan cek tagihan ulang.")
+		}
+		if inq.CustomerNo != "" && inq.CustomerNo != target {
+			return nil, fmt.Errorf("Nomor pelanggan (%s) tidak cocok dengan nomor pada sesi inquiry (%s)", target, inq.CustomerNo)
 		}
 		chargedAmount = inq.TotalAmount
 		if inq.PaymentSKU != "" {
 			sku = inq.PaymentSKU
 		}
+		// Hapus sesi inquiry agar tidak terjadi pembayaran ganda (double-payment prevention)
+		defer s.repo.DeleteInquiry(inqID)
+	} else if prod.Type == "POSTPAID" {
+		return nil, errors.New("Produk pascabayar wajib melakukan cek tagihan (inquiry) terlebih dahulu sebelum pembayaran. Silakan lakukan cek tagihan dan sertakan inquiry_id.")
 	}
 
 	// 4. Potong Saldo Atomik via WalletService

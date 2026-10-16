@@ -18,6 +18,7 @@ type Repository interface {
 	UpdateOrder(order *Order)
 	SaveInquiry(inq *BillInquiryResponse)
 	GetInquiry(id string) (*BillInquiryResponse, bool)
+	DeleteInquiry(id string)
 }
 
 // MemoryRepository provides thread-safe order storage with O(1) indexed lookups and disk persistence
@@ -150,4 +151,10 @@ func (r *MemoryRepository) GetInquiry(id string) (*BillInquiryResponse, bool) {
 	defer r.mu.RUnlock()
 	inq, ok := r.inquiries[id]
 	return inq, ok
+}
+
+func (r *MemoryRepository) DeleteInquiry(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.inquiries, id)
 }
