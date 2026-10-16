@@ -19,6 +19,7 @@ type Product struct {
 	ID            string          `json:"id"`
 	CategoryID    string          `json:"category_id"`              // Wajib berelasi dengan app_categories
 	CategoryName  string          `json:"category_name,omitempty"`   // Nama kategori (join/lookup)
+	CategoryType  string          `json:"category_type,omitempty"`   // Tipe kategori: pulsa, data, pln, emoney, game, pdam
 	Category      ProductCategory `json:"category"`                  // pulsa, data, pln, emoney, game
 	VendorCode    string          `json:"vendor_code"`               // DIGIFLAZZ, IAK, SERPUL, MANUAL
 	BuyerSKUCode  string          `json:"buyer_sku_code"`            // Kode produk bayar dari vendor (e.g. BPDAM177 / FIBP14)

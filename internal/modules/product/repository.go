@@ -163,6 +163,32 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 		return len(r.allCache), nil
 	}
 
+	// 0. Fetch category types lookup from app_categories
+	catTypeMap := make(map[string]string)
+	catBytes, errCat := sbClient.GetDB("app_categories", "select=id,type,slug,name", "")
+	if errCat == nil && len(catBytes) > 0 {
+		var dbCats []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(catBytes, &dbCats); err == nil {
+			for _, c := range dbCats {
+				t := strings.ToLower(strings.TrimSpace(c.Type))
+				if c.ID != "" {
+					catTypeMap[strings.ToLower(c.ID)] = t
+				}
+				if c.Slug != "" {
+					catTypeMap[strings.ToLower(c.Slug)] = t
+				}
+				if c.Name != "" {
+					catTypeMap[strings.ToLower(c.Name)] = t
+				}
+			}
+		}
+	}
+
 	// 1. Fetch live products from Supabase database (public.ppob_products)
 	dbBytes, err := sbClient.GetDB("ppob_products", "select=*", "")
 	if err == nil && len(dbBytes) > 0 {
@@ -225,9 +251,18 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 					prodType = "PREPAID"
 				}
 
+				catType := ""
+				if dp.CategoryID != "" {
+					catType = catTypeMap[strings.ToLower(dp.CategoryID)]
+				}
+				if catType == "" && dp.Category != "" {
+					catType = catTypeMap[strings.ToLower(dp.Category)]
+				}
+
 				p := &Product{
 					ID:             dp.ID,
 					CategoryID:     dp.CategoryID,
+					CategoryType:   catType,
 					VendorCode:     vendorCode,
 					BuyerSKUCode:   dp.BuyerSKUCode,
 					InquirySKUCode: dp.InquirySKUCode,

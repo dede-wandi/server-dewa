@@ -90,9 +90,56 @@ func (h *Handler) ListUserProducts(w http.ResponseWriter, r *http.Request) {
 	brand := r.URL.Query().Get("brand")
 	search := r.URL.Query().Get("search")
 	prodType := strings.TrimSpace(r.URL.Query().Get("type"))
+	catType := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("category_type")))
+
+	// Jika ?type=pulsa / ?type=data / ?type=pdam diberikan (bukan PREPAID / POSTPAID)
+	if prodType != "" && !strings.EqualFold(prodType, "PREPAID") && !strings.EqualFold(prodType, "POSTPAID") && !strings.EqualFold(prodType, "ALL") {
+		if catType == "" {
+			catType = strings.ToLower(prodType)
+		}
+		prodType = ""
+	}
 
 	// activeOnly = true: hanya produk aktif yang tampil ke user
 	products := h.service.ListProducts(category, brand, search, true)
+
+	// Filter berdasarkan category_type (misal ?category_type=pulsa atau ?type=pulsa)
+	if catType != "" && !strings.EqualFold(catType, "ALL") {
+		filtered := make([]*Product, 0)
+		for _, p := range products {
+			pCatType := strings.ToLower(strings.TrimSpace(p.CategoryType))
+			pNameLower := strings.ToLower(p.Name)
+			pCatLower := strings.ToLower(string(p.Category))
+
+			// Match langsung berdasarkan p.CategoryType
+			if pCatType == catType {
+				filtered = append(filtered, p)
+				continue
+			}
+
+			// Fallback jika CategoryType belum terisi
+			if catType == "pulsa" {
+				isNonPulsa := strings.Contains(pNameLower, "hifi") ||
+					strings.Contains(pCatLower, "hifi") ||
+					strings.Contains(pNameLower, "data") ||
+					strings.Contains(pCatLower, "data") ||
+					strings.Contains(pNameLower, "gb") ||
+					strings.Contains(pNameLower, "kuota") ||
+					strings.Contains(pNameLower, "internet") ||
+					strings.Contains(pCatLower, "internet") ||
+					strings.Contains(pNameLower, "voucher") ||
+					strings.Contains(pCatLower, "voucher")
+				if !isNonPulsa && (pCatType == "pulsa" || strings.Contains(pCatLower, "pulsa") || strings.Contains(pNameLower, "pulsa") || strings.Contains(pNameLower, "reguler")) {
+					filtered = append(filtered, p)
+				}
+			} else if catType == "data" {
+				if pCatType == "data" || strings.Contains(pNameLower, "data") || strings.Contains(pCatLower, "data") || strings.Contains(pNameLower, "gb") || strings.Contains(pNameLower, "internet") || strings.Contains(pNameLower, "hifi") {
+					filtered = append(filtered, p)
+				}
+			}
+		}
+		products = filtered
+	}
 
 	if prodType != "" && !strings.EqualFold(prodType, "ALL") {
 		filtered := make([]*Product, 0)
