@@ -275,38 +275,49 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 		ptsReward = int64(req.Price * 0.01) // 1% cashback default
 	}
 
+	inqSKU := strings.TrimSpace(req.InquirySKUCode)
+	if inqSKU == "" && prodType == "POSTPAID" {
+		if strings.HasPrefix(strings.ToUpper(buyerSKU), "B") {
+			inqSKU = "C" + buyerSKU[1:]
+		} else {
+			inqSKU = buyerSKU
+		}
+	}
+
 	// 6. Simpan ke database Supabase (public.ppob_products)
 	newProd := &Product{
-		CategoryID:    categoryID,
-		CategoryName:  categoryName,
-		Category:      ProductCategory(strings.ToLower(catTag)),
-		VendorCode:    vendorCode,
-		BuyerSKUCode:  buyerSKU,
-		Code:          finalCode,
-		Name:          req.Name,
-		Brand:         brand,
-		Type:          prodType,
-		CostPrice:     req.CostPrice,
-		OriginalPrice: req.CostPrice,
-		Price:         req.Price,
-		PointsReward:  ptsReward,
-		Status:        status,
-		Description:   req.Description,
-		Stock:         req.Stock,
-		ImageURL:      req.ImageURL,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		CategoryID:     categoryID,
+		CategoryName:   categoryName,
+		Category:       ProductCategory(strings.ToLower(catTag)),
+		VendorCode:     vendorCode,
+		BuyerSKUCode:   buyerSKU,
+		InquirySKUCode: inqSKU,
+		Code:           finalCode,
+		Name:           req.Name,
+		Brand:          brand,
+		Type:           prodType,
+		CostPrice:      req.CostPrice,
+		OriginalPrice:  req.CostPrice,
+		Price:          req.Price,
+		PointsReward:   ptsReward,
+		Status:         status,
+		Description:    req.Description,
+		Stock:          req.Stock,
+		ImageURL:       req.ImageURL,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
 	if s.sbClient != nil {
 		insertPayload := map[string]interface{}{
-			"category_id":    categoryID,
-			"vendor_code":    vendorCode,
-			"buyer_sku_code": buyerSKU,
-			"code":           newProd.Code,
-			"name":           newProd.Name,
-			"type":           prodType,
-			"category":       string(newProd.Category),
+			"category_id":      categoryID,
+			"vendor_code":      vendorCode,
+			"buyer_sku_code":   buyerSKU,
+			"inquiry_sku_code": inqSKU,
+			"code":             newProd.Code,
+			"name":             newProd.Name,
+			"type":             prodType,
+			"category":         string(newProd.Category),
 			"brand":          newProd.Brand,
 			"cost_price":     newProd.CostPrice,
 			"price":          newProd.Price,
@@ -366,6 +377,9 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 	}
 	if req.BuyerSKUCode != nil {
 		updatePayload["buyer_sku_code"] = *req.BuyerSKUCode
+	}
+	if req.InquirySKUCode != nil {
+		updatePayload["inquiry_sku_code"] = strings.TrimSpace(*req.InquirySKUCode)
 	}
 	if req.Code != nil {
 		updatePayload["code"] = strings.ToUpper(*req.Code)
@@ -453,6 +467,9 @@ func (s *service) UpdateProduct(id string, req UpdateProductRequest) (*Product, 
 		}
 		if req.Type != nil {
 			existing.Type = strings.ToUpper(strings.TrimSpace(*req.Type))
+		}
+		if req.InquirySKUCode != nil {
+			existing.InquirySKUCode = strings.TrimSpace(*req.InquirySKUCode)
 		}
 		s.repo.Save(existing)
 		return existing, nil

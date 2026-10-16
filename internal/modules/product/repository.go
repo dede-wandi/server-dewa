@@ -176,8 +176,9 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 			Stock         int     `json:"stock"`
 			Description   string  `json:"description"`
 			ImageURL      string  `json:"image_url"`
-			IsActive      bool    `json:"is_active"`
-			Type          string  `json:"type"`
+			IsActive       bool    `json:"is_active"`
+			Type           string  `json:"type"`
+			InquirySKUCode string  `json:"inquiry_sku_code"`
 		}
 		if err := json.Unmarshal(dbBytes, &dbProducts); err == nil && len(dbProducts) > 0 {
 			r.mu.Lock()
@@ -219,12 +220,13 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 				}
 
 				p := &Product{
-					ID:            dp.ID,
-					CategoryID:    dp.CategoryID,
-					VendorCode:    vendorCode,
-					BuyerSKUCode:  dp.BuyerSKUCode,
-					Code:          code,
-					Name:          dp.Name,
+					ID:             dp.ID,
+					CategoryID:     dp.CategoryID,
+					VendorCode:     vendorCode,
+					BuyerSKUCode:   dp.BuyerSKUCode,
+					InquirySKUCode: dp.InquirySKUCode,
+					Code:           code,
+					Name:           dp.Name,
 					Category:      ProductCategory(strings.ToLower(dp.Category)),
 					Brand:         brand,
 					Type:          prodType,
