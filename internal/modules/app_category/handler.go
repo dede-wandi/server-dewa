@@ -69,6 +69,17 @@ func (h *Handler) GetActiveCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	typeParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type")))
+	if typeParam != "" {
+		filtered := make([]AppCategory, 0, len(categories))
+		for _, cat := range categories {
+			if strings.EqualFold(cat.Type, typeParam) {
+				filtered = append(filtered, cat)
+			}
+		}
+		categories = filtered
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
 		"count":  len(categories),
@@ -99,6 +110,17 @@ func (h *Handler) GetAllCategories(w http.ResponseWriter, r *http.Request) {
 			"message": err.Error(),
 		})
 		return
+	}
+
+	typeParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type")))
+	if typeParam != "" {
+		filtered := make([]AppCategory, 0, len(categories))
+		for _, cat := range categories {
+			if strings.EqualFold(cat.Type, typeParam) {
+				filtered = append(filtered, cat)
+			}
+		}
+		categories = filtered
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{

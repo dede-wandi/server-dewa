@@ -110,6 +110,7 @@ func New(cfg *config.Config) *chi.Mux {
 		// Public catalog browsing (fast cached responses, supports /products & /product)
 		api.Mount("/products", productHandler.Routes())
 		api.Mount("/product", productHandler.Routes())
+		api.Get("/prefixes", productHandler.GetOperatorPrefixes)
 
 		// Global webhooks & callbacks for payment gateways and PPOB vendors
 		api.Mount("/callback", callbackHandler.Routes())

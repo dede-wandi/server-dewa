@@ -49,6 +49,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.ListUserProducts)
 	r.Get("/categories", h.ListCategories)
 	r.Get("/brands", h.ListBrands)
+	r.Get("/prefixes", h.GetOperatorPrefixes)
 	r.Get("/{code}", h.GetUserProductDetail)
 
 	// Admin-only / CRUD operations
@@ -230,6 +231,19 @@ func (h *Handler) ListBrands(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"count":  len(brands),
 		"data":   brands,
+	})
+}
+
+// GetOperatorPrefixes returns cellular operator prefixes mapping for dynamic mobile frontend auto-detection
+func (h *Handler) GetOperatorPrefixes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	prefixes := GetDefaultOperatorPrefixes()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Operator prefixes retrieved successfully",
+		"count":   len(prefixes),
+		"data":    prefixes,
 	})
 }
 

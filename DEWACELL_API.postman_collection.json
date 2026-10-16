@@ -617,6 +617,26 @@
                   ]
                 }
               }
+            },
+            {
+              "name": "Get Operator Prefixes",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/products/prefixes",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "prefixes"
+                  ]
+                },
+                "description": "Mengambil kamus prefix nomor seluler (Telkomsel, Indosat, XL, Axis, Tri, Smartfren) lengkap dengan warna, nama brand, dan ikon untuk auto-deteksi dinamis di aplikasi mobile."
+              }
             }
           ]
         },
@@ -1673,6 +1693,32 @@
                   ]
                 },
                 "description": "Mengambil semua kategori layanan berhierarki lengkap dengan percabangan children (Level 1 -> Sub Level 2 -> Sub-sub Level 3)."
+              }
+            },
+            {
+              "name": "Get Categories by Type (pulsa, data, voucher, tlp, pln, dll)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/categories?type=pulsa",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "categories"
+                  ],
+                  "query": [
+                    {
+                      "key": "type",
+                      "value": "pulsa",
+                      "description": "Filter kategori berdasarkan jenis layanan: pulsa, data, voucher, tlp, sms, pln, emoney, game, pdam"
+                    }
+                  ]
+                },
+                "description": "Mengambil kategori khusus berdasarkan jenis layanan seluler/digital (pulsa, data, voucher, tlp, sms, dll)."
               }
             },
             {
@@ -3922,7 +3968,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Pulsa & Paket Data\",\n  \"code\": \"cat_pulsa_data\",\n  \"slug\": \"pulsa-dan-paket-data\",\n  \"description\": \"Layanan pulsa reguler, transfer pulsa, dan paket kuota internet\",\n  \"icon\": \"phone-portrait-outline\",\n  \"badge\": \"PROMO\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                  "raw": "{\n  \"name\": \"Pulsa & Paket Data\",\n  \"code\": \"cat_pulsa_data\",\n  \"slug\": \"pulsa-dan-paket-data\",\n  \"description\": \"Layanan pulsa reguler, transfer pulsa, dan paket kuota internet\",\n  \"icon\": \"phone-portrait-outline\",\n  \"badge\": \"PROMO\",\n  \"type\": \"pulsa\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/categories",
@@ -3936,7 +3982,7 @@
                     "categories"
                   ]
                 },
-                "description": "Membuat Kategori Utama (Level 1 / Root) tanpa parent_id. ID kategori yang terbentuk otomatis tersimpan di variable {{category_id}}."
+                "description": "Membuat Kategori Utama (Level 1 / Root) tanpa parent_id. Parameter 'type' bisa diisi: pulsa, data, voucher, tlp, sms, pln, emoney, game, pdam. ID kategori yang terbentuk otomatis tersimpan di variable {{category_id}}."
               }
             },
             {
@@ -3973,7 +4019,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"parent_id\": \"{{category_id}}\",\n  \"name\": \"Telkomsel\",\n  \"code\": \"sub_tsel\",\n  \"slug\": \"telkomsel\",\n  \"description\": \"Produk pulsa dan kuota Telkomsel\",\n  \"icon\": \"phone-portrait\",\n  \"badge\": \"TERLARIS\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
+                  "raw": "{\n  \"parent_id\": \"{{category_id}}\",\n  \"name\": \"Telkomsel\",\n  \"code\": \"sub_tsel\",\n  \"slug\": \"telkomsel\",\n  \"description\": \"Produk pulsa dan kuota Telkomsel\",\n  \"icon\": \"phone-portrait\",\n  \"badge\": \"TERLARIS\",\n  \"type\": \"pulsa\",\n  \"sort_order\": 1,\n  \"is_active\": true\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/v1/admin/categories",

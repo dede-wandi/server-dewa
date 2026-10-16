@@ -438,6 +438,27 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 		}
 	}
 
+	categoryType := strings.ToLower(strings.TrimSpace(req.Type))
+	if categoryType == "" {
+		if strings.Contains(slug, "data") || strings.Contains(slug, "internet") {
+			categoryType = "data"
+		} else if strings.Contains(slug, "voucher") {
+			categoryType = "voucher"
+		} else if strings.Contains(slug, "tlp") || strings.Contains(slug, "telepon") {
+			categoryType = "tlp"
+		} else if strings.Contains(slug, "pln") {
+			categoryType = "pln"
+		} else if strings.Contains(slug, "game") {
+			categoryType = "game"
+		} else if strings.Contains(slug, "emoney") || strings.Contains(slug, "wallet") {
+			categoryType = "emoney"
+		} else if strings.Contains(slug, "pdam") {
+			categoryType = "pdam"
+		} else {
+			categoryType = "pulsa"
+		}
+	}
+
 	newCat := AppCategory{
 		ID:          newID,
 		ParentID:    parentID,
@@ -449,6 +470,7 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 		IconURL:     req.IconURL,
 		BannerURL:   req.BannerURL,
 		Badge:       req.Badge,
+		Type:        categoryType,
 		Level:       level,
 		SortOrder:   req.SortOrder,
 		IsActive:    isActive,
@@ -468,6 +490,7 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 		"icon_url":    newCat.IconURL,
 		"banner_url":  newCat.BannerURL,
 		"badge":       newCat.Badge,
+		"type":        newCat.Type,
 		"level":       newCat.Level,
 		"sort_order":  newCat.SortOrder,
 		"is_active":   newCat.IsActive,
@@ -545,6 +568,10 @@ func (s *categoryService) UpdateCategory(id string, req UpdateCategoryRequest) (
 	if req.Badge != "" {
 		current.Badge = req.Badge
 		payload["badge"] = req.Badge
+	}
+	if req.Type != "" {
+		current.Type = strings.ToLower(strings.TrimSpace(req.Type))
+		payload["type"] = current.Type
 	}
 	if req.Level != nil {
 		current.Level = *req.Level

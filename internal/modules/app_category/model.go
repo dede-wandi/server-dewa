@@ -18,6 +18,7 @@ type AppCategory struct {
 	IconURL     string                 `json:"icon_url,omitempty"`
 	BannerURL   string                 `json:"banner_url,omitempty"`
 	Badge       string                 `json:"badge,omitempty"`
+	Type        string                 `json:"type"` // pulsa, data, voucher, tlp, sms, pln, emoney, game, pdam, etc.
 	Level       int                    `json:"level"`
 	SortOrder   int                    `json:"sort_order"`
 	IsActive    bool                   `json:"is_active"`
@@ -38,6 +39,7 @@ type CreateCategoryRequest struct {
 	IconURL     string                 `json:"icon_url,omitempty"`
 	BannerURL   string                 `json:"banner_url,omitempty"`
 	Badge       string                 `json:"badge,omitempty"`
+	Type        string                 `json:"type,omitempty"` // pulsa, data, voucher, tlp, sms, etc.
 	Level       int                    `json:"level,omitempty"`
 	SortOrder   int                    `json:"sort_order,omitempty"`
 	IsActive    *bool                  `json:"is_active,omitempty"`
@@ -54,6 +56,7 @@ type UpdateCategoryRequest struct {
 	IconURL     string                 `json:"icon_url,omitempty"`
 	BannerURL   string                 `json:"banner_url,omitempty"`
 	Badge       string                 `json:"badge,omitempty"`
+	Type        string                 `json:"type,omitempty"`
 	Level       *int                   `json:"level,omitempty"`
 	SortOrder   *int                   `json:"sort_order,omitempty"`
 	IsActive    *bool                  `json:"is_active,omitempty"`
