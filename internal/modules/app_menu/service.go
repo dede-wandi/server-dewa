@@ -31,7 +31,7 @@ type Service interface {
 	GetMenuByID(id string) (*AppMenu, error)
 	GetMenuByCode(code string) (*AppMenu, error)
 	CreateMenu(req CreateMenuRequest) (*AppMenu, error)
-	UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, error)
+	UpdateMenu(id string, req UpdateMenuRequest, rawMaps ...map[string]interface{}) (*AppMenu, error)
 	DeleteMenu(id string) error
 }
 
@@ -456,7 +456,7 @@ func (s *menuService) CreateMenu(req CreateMenuRequest) (*AppMenu, error) {
 }
 
 // UpdateMenu modifies an existing menu or its parent/sub-menu link
-func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, error) {
+func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest, rawMaps ...map[string]interface{}) (*AppMenu, error) {
 	current, err := s.GetMenuByID(id)
 	if err != nil {
 		return nil, err
@@ -464,6 +464,11 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 
 	payload := map[string]interface{}{
 		"updated_at": time.Now(),
+	}
+
+	var rawMap map[string]interface{}
+	if len(rawMaps) > 0 && rawMaps[0] != nil {
+		rawMap = rawMaps[0]
 	}
 
 	if req.Code != "" {
@@ -478,7 +483,20 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 		current.Subtitle = req.Subtitle
 		payload["subtitle"] = req.Subtitle
 	}
-	if req.CategoryID != nil {
+
+	// 1. Handling category_id (bisa dikosongkan/null)
+	if rawMap != nil {
+		if val, exists := rawMap["category_id"]; exists {
+			if val == nil || fmt.Sprintf("%v", val) == "" || fmt.Sprintf("%v", val) == "null" {
+				current.CategoryID = nil
+				payload["category_id"] = nil
+			} else {
+				clean := strings.TrimSpace(fmt.Sprintf("%v", val))
+				current.CategoryID = &clean
+				payload["category_id"] = clean
+			}
+		}
+	} else if req.CategoryID != nil {
 		if strings.TrimSpace(*req.CategoryID) == "" {
 			current.CategoryID = nil
 			payload["category_id"] = nil
@@ -488,7 +506,31 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 			payload["category_id"] = clean
 		}
 	}
-	if req.ParentID != nil {
+
+	// 2. Handling parent_id (bisa dikosongkan/null)
+	if rawMap != nil {
+		if val, exists := rawMap["parent_id"]; exists {
+			if val == nil || fmt.Sprintf("%v", val) == "" || fmt.Sprintf("%v", val) == "null" || fmt.Sprintf("%v", val) == "root" {
+				current.ParentID = nil
+				current.Level = 1
+				payload["parent_id"] = nil
+				payload["level"] = 1
+			} else {
+				clean := strings.TrimSpace(fmt.Sprintf("%v", val))
+				if clean == id {
+					return nil, errors.New("menu tidak dapat menjadi parent dari dirinya sendiri")
+				}
+				parent, err := s.GetMenuByID(clean)
+				if err != nil {
+					return nil, fmt.Errorf("parent menu dengan id '%s' tidak ditemukan", clean)
+				}
+				current.ParentID = &clean
+				current.Level = parent.Level + 1
+				payload["parent_id"] = clean
+				payload["level"] = current.Level
+			}
+		}
+	} else if req.ParentID != nil {
 		clean := strings.TrimSpace(*req.ParentID)
 		if clean == "" || clean == "null" || clean == "root" {
 			current.ParentID = nil
@@ -509,6 +551,7 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 			payload["level"] = current.Level
 		}
 	}
+
 	if req.Level != nil && *req.Level > 0 {
 		current.Level = *req.Level
 		payload["level"] = *req.Level
@@ -517,7 +560,27 @@ func (s *menuService) UpdateMenu(id string, req UpdateMenuRequest) (*AppMenu, er
 		current.ActionType = req.ActionType
 		payload["action_type"] = req.ActionType
 	}
-	if req.TargetURL != nil {
+
+	// 3. Handling target_url & route (bisa dikosongkan/null)
+	if rawMap != nil {
+		if val, exists := rawMap["target_url"]; exists {
+			if val == nil || fmt.Sprintf("%v", val) == "" || fmt.Sprintf("%v", val) == "null" {
+				current.TargetURL = ""
+				payload["target_url"] = ""
+			} else {
+				clean := strings.TrimSpace(fmt.Sprintf("%v", val))
+				current.TargetURL = clean
+				payload["target_url"] = clean
+			}
+		}
+		if val, exists := rawMap["route"]; exists {
+			if val == nil || fmt.Sprintf("%v", val) == "" || fmt.Sprintf("%v", val) == "null" {
+				payload["route"] = ""
+			} else {
+				payload["route"] = strings.TrimSpace(fmt.Sprintf("%v", val))
+			}
+		}
+	} else if req.TargetURL != nil {
 		clean := strings.TrimSpace(*req.TargetURL)
 		current.TargetURL = clean
 		payload["target_url"] = clean

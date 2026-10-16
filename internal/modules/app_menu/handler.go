@@ -2,6 +2,7 @@ package app_menu
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -159,8 +160,18 @@ func (h *Handler) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	id := chi.URLParam(r, "id")
 
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Gagal membaca data request: " + err.Error(),
+		})
+		return
+	}
+
 	var req UpdateMenuRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "error",
@@ -169,7 +180,10 @@ func (h *Handler) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.service.UpdateMenu(id, req)
+	var rawMap map[string]interface{}
+	_ = json.Unmarshal(bodyBytes, &rawMap)
+
+	updated, err := h.service.UpdateMenu(id, req, rawMap)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
