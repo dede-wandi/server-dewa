@@ -85,13 +85,55 @@ func (s *service) ListProducts(category, brand, search string, activeOnly bool) 
 
 	// Filter products to display to users (p.IsActive && status != INACTIVE)
 	// Produk dengan status GANGGUAN tetap tampil di user (kecuali status INACTIVE)
+	// Serta sembunyikan SKU inquiry-only untuk produk pascabayar agar hanya tampil 1 produk bayar ke user
 	activeProds := make([]*Product, 0)
 	for _, p := range prods {
 		if p.IsActive && !strings.EqualFold(p.Status, "INACTIVE") {
-			activeProds = append(activeProds, p)
+			if !IsPostpaidInquiryOnly(p, prods) {
+				activeProds = append(activeProds, p)
+			}
 		}
 	}
 	return activeProds
+}
+
+// IsPostpaidInquiryOnly mengecek apakah produk pascabayar ini murni SKU pengecekan (inquiry-only)
+// yang tidak boleh ditampilkan sebagai item terpisah di katalog pengguna.
+func IsPostpaidInquiryOnly(p *Product, allProducts []*Product) bool {
+	if !strings.EqualFold(p.Type, "POSTPAID") {
+		return false
+	}
+
+	pCode := strings.ToUpper(strings.TrimSpace(p.Code))
+	pBuyer := strings.ToUpper(strings.TrimSpace(p.BuyerSKUCode))
+
+	for _, other := range allProducts {
+		if other.ID == p.ID {
+			continue
+		}
+		if !strings.EqualFold(other.Type, "POSTPAID") {
+			continue
+		}
+		otherInq := strings.ToUpper(strings.TrimSpace(other.InquirySKUCode))
+		if (pBuyer != "" && otherInq == pBuyer) || (pCode != "" && otherInq == pCode) {
+			return true
+		}
+		if strings.HasPrefix(pBuyer, "C") && strings.HasPrefix(strings.ToUpper(other.BuyerSKUCode), "B") {
+			if len(pBuyer) > 1 && pBuyer[1:] == strings.ToUpper(other.BuyerSKUCode)[1:] {
+				return true
+			}
+		}
+	}
+
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(p.Name)), "CEK ") && p.Price <= 0 {
+		for _, other := range allProducts {
+			if other.ID != p.ID && strings.EqualFold(other.Type, "POSTPAID") && other.Price > 0 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (s *service) GetProduct(code string) (*Product, error) {

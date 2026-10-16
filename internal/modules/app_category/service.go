@@ -112,6 +112,15 @@ func (s *categoryService) fetchProductsForCategory(categoryID, slug string) []*p
 		}
 	}
 
+	// Filter out postpaid inquiry-only products (hanya tampilkan produk bayar yang valid ke user)
+	var filteredResults []*product.Product
+	for _, p := range results {
+		if !product.IsPostpaidInquiryOnly(p, results) {
+			filteredResults = append(filteredResults, p)
+		}
+	}
+	results = filteredResults
+
 	if results == nil {
 		results = []*product.Product{}
 	}
