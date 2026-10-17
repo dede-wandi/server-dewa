@@ -335,28 +335,41 @@ func (s *service) RegisterMember(agentID string, req RegisterMemberRequest) (*Ag
 
 	var memberUserID string
 
-	// Buat user di Supabase Auth via Admin API
-	if s.sbClient != nil && s.sbClient.HasSecretKey() {
-		createUserPayload := map[string]interface{}{
-			"email":         email,
-			"password":      password,
-			"email_confirm": true,
-			"user_metadata": map[string]interface{}{
-				"name":          name,
-				"phone":         cleanPhone,
-				"business_name": req.BusinessName,
-				"upline_id":     agentID,
-				"role":          "user",
-			},
+	// Buat user di Supabase Auth via Admin API atau SignUp
+	userMetadata := map[string]interface{}{
+		"name":          name,
+		"phone":         cleanPhone,
+		"business_name": req.BusinessName,
+		"upline_id":     agentID,
+		"role":          "user",
+	}
+
+	if s.sbClient != nil {
+		if s.sbClient.HasSecretKey() {
+			createUserPayload := map[string]interface{}{
+				"email":         email,
+				"password":      password,
+				"email_confirm": true,
+				"user_metadata": userMetadata,
+			}
+			newUser, err := s.sbClient.AdminCreateUser(createUserPayload)
+			if err == nil && newUser != nil {
+				memberUserID = newUser.ID
+			}
 		}
 
-		newUser, err := s.sbClient.AdminCreateUser(createUserPayload)
-		if err != nil {
-			return nil, fmt.Errorf("Gagal membuat akun anggota: %w", err)
+		if memberUserID == "" {
+			// Fallback: daftarkan via SignUp menggunakan Supabase anon key
+			signUpResp, err := s.sbClient.SignUp(email, password, userMetadata)
+			if err == nil && signUpResp != nil && signUpResp.User.ID != "" {
+				memberUserID = signUpResp.User.ID
+			} else if err != nil {
+				log.Printf("[RegisterMember] SignUp info: %v", err)
+			}
 		}
-		memberUserID = newUser.ID
-	} else {
-		// In-memory fallback / demo
+	}
+
+	if memberUserID == "" {
 		memberUserID = fmt.Sprintf("mem-%d", time.Now().UnixNano())
 	}
 

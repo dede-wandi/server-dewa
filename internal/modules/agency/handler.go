@@ -41,6 +41,7 @@ func (h *Handler) Routes() chi.Router {
 
 	// Member management
 	r.Get("/members", h.ListMembers)
+	r.Post("/members", h.RegisterMember)
 	r.Post("/members/register", h.RegisterMember)
 	r.Get("/members/{id}", h.GetMember)
 	r.Get("/members/{id}/markups", h.GetMemberMarkups)
