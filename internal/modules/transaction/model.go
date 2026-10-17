@@ -24,6 +24,10 @@ type Order struct {
 	ProductCategory string      `json:"product_category"` // pulsa, data, pln, emoney, game
 	TargetAccount   string      `json:"target_account"`   // No HP, No Meter, Player ID
 	Price           float64     `json:"price"`
+	BasePrice       float64     `json:"base_price,omitempty"`
+	MarkupAmount    float64     `json:"markup_amount,omitempty"`
+	UplineID        string      `json:"upline_id,omitempty"`
+	CommissionStatus string     `json:"commission_status,omitempty"` // NONE, PENDING, CREDITED, CANCELLED
 	PointsEarned    int64       `json:"points_earned"`
 	Status          OrderStatus `json:"status"`
 	SerialNumber    string      `json:"serial_number,omitempty"` // Stroom token PLN / SN Pulsa

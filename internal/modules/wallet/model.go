@@ -10,6 +10,7 @@ const (
 	CategoryAdjustment  = "ADJUSTMENT"
 	CategoryTransferIn  = "TRANSFER_IN"
 	CategoryTransferOut = "TRANSFER_OUT"
+	CategoryCommission  = "COMMISSION"
 )
 
 // Transaction types

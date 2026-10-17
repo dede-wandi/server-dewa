@@ -33,6 +33,11 @@ func NewHandler(
 	}
 }
 
+// SetAgencyResolver sets the agency markup resolver
+func (h *Handler) SetAgencyResolver(ar AgencyResolver) {
+	h.service.SetAgencyResolver(ar)
+}
+
 // Routes mounts all transaction endpoints
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()

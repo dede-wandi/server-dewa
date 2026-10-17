@@ -13,9 +13,16 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// AgencyResolver provides upline category markups for downline members
+type AgencyResolver interface {
+	GetUplineMarkupForUser(userID string) (map[string]float64, string, error)
+}
+
 // Handler represents the presentation HTTP controller for the product catalog
 type Handler struct {
-	service Service
+	service        Service
+	sbClient       *supabase.Client
+	agencyResolver AgencyResolver
 }
 
 // NewHandler creates a new instance of Handler with OOP Service & Cache Repository
@@ -29,8 +36,14 @@ func NewHandler(sbClient *supabase.Client) *Handler {
 	}()
 
 	return &Handler{
-		service: svc,
+		service:  svc,
+		sbClient: sbClient,
 	}
+}
+
+// SetAgencyResolver sets the agency markup resolver
+func (h *Handler) SetAgencyResolver(ar AgencyResolver) {
+	h.agencyResolver = ar
 }
 
 // GetService returns the underlying Service instance
@@ -159,6 +172,35 @@ func (h *Handler) ListUserProducts(w http.ResponseWriter, r *http.Request) {
 		products = []*Product{}
 	}
 
+	// Terapkan markup harga kategori jika pengguna adalah downline dari agen
+	if h.agencyResolver != nil && h.sbClient != nil {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" && strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			token := strings.TrimSpace(authHeader[7:])
+			if user, err := h.sbClient.GetUser(token); err == nil && user != nil {
+				markups, uplineID, _ := h.agencyResolver.GetUplineMarkupForUser(user.ID)
+				if uplineID != "" && len(markups) > 0 {
+					marked := make([]*Product, len(products))
+					for i, p := range products {
+						pCopy := *p
+						markup := 0.0
+						if m, ok := markups[p.CategoryID]; ok {
+							markup = m
+						} else if m, ok := markups[strings.ToLower(string(p.Category))]; ok {
+							markup = m
+						} else if m, ok := markups[strings.ToLower(p.CategoryType)]; ok {
+							markup = m
+						}
+						pCopy.OriginalPrice = p.Price
+						pCopy.Price = p.Price + markup
+						marked[i] = &pCopy
+					}
+					products = marked
+				}
+			}
+		}
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
 		"count":  len(products),
@@ -179,6 +221,31 @@ func (h *Handler) GetUserProductDetail(w http.ResponseWriter, r *http.Request) {
 			"message": "Produk sedang tidak aktif atau tidak ditemukan",
 		})
 		return
+	}
+
+	// Terapkan markup harga jika pengguna adalah downline dari agen
+	if h.agencyResolver != nil && h.sbClient != nil {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" && strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			token := strings.TrimSpace(authHeader[7:])
+			if user, err := h.sbClient.GetUser(token); err == nil && user != nil {
+				markups, uplineID, _ := h.agencyResolver.GetUplineMarkupForUser(user.ID)
+				if uplineID != "" && len(markups) > 0 {
+					pCopy := *p
+					markup := 0.0
+					if m, ok := markups[p.CategoryID]; ok {
+						markup = m
+					} else if m, ok := markups[strings.ToLower(string(p.Category))]; ok {
+						markup = m
+					} else if m, ok := markups[strings.ToLower(p.CategoryType)]; ok {
+						markup = m
+					}
+					pCopy.OriginalPrice = p.Price
+					pCopy.Price = p.Price + markup
+					p = &pCopy
+				}
+			}
+		}
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{

@@ -9,6 +9,7 @@ import (
 	"github.com/dede-wandi/server-dewa/internal/config"
 	"github.com/dede-wandi/server-dewa/internal/middleware"
 	"github.com/dede-wandi/server-dewa/internal/modules/admin"
+	"github.com/dede-wandi/server-dewa/internal/modules/agency"
 	"github.com/dede-wandi/server-dewa/internal/modules/app_category"
 	"github.com/dede-wandi/server-dewa/internal/modules/app_menu"
 	"github.com/dede-wandi/server-dewa/internal/modules/article"
@@ -88,7 +89,10 @@ func New(cfg *config.Config) *chi.Mux {
 	authHandler := auth.NewHandler(sbClient, notificationHandler.GetService())
 	productHandler := product.NewHandler(sbClient)
 	walletHandler := wallet.NewHandler(sbClient)
+	agencyHandler := agency.NewHandler(sbClient, walletHandler.GetWalletService())
+	productHandler.SetAgencyResolver(agencyHandler.GetService())
 	transactionHandler := transaction.NewHandler(walletHandler.GetWalletService(), productHandler.GetService(), sbClient)
+	transactionHandler.SetAgencyResolver(agencyHandler.GetService())
 	adminHandler := admin.NewHandler(sbClient, walletHandler)
 	bannerHandler := banner.NewHandler(sbClient)
 	articleHandler := article.NewHandler(sbClient)
@@ -174,6 +178,7 @@ func New(cfg *config.Config) *chi.Mux {
 
 			protected.Mount("/transactions", transactionHandler.Routes())
 			protected.Mount("/wallet", walletHandler.Routes())
+			protected.Mount("/agency", agencyHandler.Routes())
 		})
 	})
 

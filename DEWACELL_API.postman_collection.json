@@ -1793,6 +1793,261 @@
             }
           ],
           "description": "Kategori layanan bertingkat / hierarki bercabang (Kategori -> Sub-Kategori -> Sub-Sub Kategori). Terpisah dari tabel POS categories."
+        },
+        {
+          "name": "Agency (Keagenan & Downline)",
+          "description": "Sistem Keagenan, Downline & Markup Harga per Kategori. Agen dapat mendaftarkan anggota downline langsung dengan markup kategori kustom.",
+          "item": [
+            {
+              "name": "Get Agency Dashboard",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/dashboard",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "dashboard"]
+                },
+                "description": "Ringkasan metrik agen: total anggota downline, total komisi diperoleh, komisi hari ini, transaksi downline, dan aktivitas terbaru."
+              }
+            },
+            {
+              "name": "Get Agency Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/profile",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "profile"]
+                },
+                "description": "Profil keagenan, nama usaha distributor, dan kode referral agen."
+              }
+            },
+            {
+              "name": "Update Agency Profile",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"business_name\": \"Dewa Mitra Mandiri\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/profile",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "profile"]
+                },
+                "description": "Mengubah nama usaha keagenan."
+              }
+            },
+            {
+              "name": "Get Downline Members",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/members",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "members"]
+                },
+                "description": "Daftar seluruh anggota downline yang terdaftar di bawah agen ini."
+              }
+            },
+            {
+              "name": "Register Downline Member & Set Markups",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Budi Cell\",\n  \"phone\": \"085812345678\",\n  \"password\": \"rahasia123\",\n  \"business_name\": \"Konter Budi Cell\",\n  \"markups\": [\n    {\n      \"category_id\": \"cat_pulsa\",\n      \"category_name\": \"Pulsa\",\n      \"markup_amount\": 1000\n    },\n    {\n      \"category_id\": \"cat_data\",\n      \"category_name\": \"Paket Data\",\n      \"markup_amount\": 1500\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/members/register",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "members", "register"]
+                },
+                "description": "Mendaftarkan anggota downline baru oleh agen secara langsung dengan pengaturan markup harga per kategori seketika."
+              }
+            },
+            {
+              "name": "Get Member Markups",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/members/{{target_user_id}}/markups",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "members", "{{target_user_id}}", "markups"]
+                },
+                "description": "Melihat settingan markup harga per kategori khusus untuk anggota tertentu."
+              }
+            },
+            {
+              "name": "Update Member Markups",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"markups\": [\n    {\n      \"category_id\": \"cat_pulsa\",\n      \"category_name\": \"Pulsa\",\n      \"markup_amount\": 1200\n    },\n    {\n      \"category_id\": \"cat_data\",\n      \"category_name\": \"Paket Data\",\n      \"markup_amount\": 2000\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/members/{{target_user_id}}/markups",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "members", "{{target_user_id}}", "markups"]
+                },
+                "description": "Menyesuaikan kenaikan harga kategori khusus untuk anggota tertentu."
+              }
+            },
+            {
+              "name": "Get Default Category Markups",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/markups/defaults",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "markups", "defaults"]
+                },
+                "description": "Mengambil template default markup kategori agen (berlaku untuk anggota yang belum diatur secara kustom)."
+              }
+            },
+            {
+              "name": "Update Default Category Markups",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"markups\": [\n    {\n      \"category_id\": \"cat_pulsa\",\n      \"category_name\": \"Pulsa\",\n      \"markup_amount\": 500\n    },\n    {\n      \"category_id\": \"cat_data\",\n      \"category_name\": \"Paket Data\",\n      \"markup_amount\": 1000\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/markups/defaults",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "markups", "defaults"]
+                },
+                "description": "Memperbarui template default markup kategori agen."
+              }
+            },
+            {
+              "name": "Copy Markups to Other Members",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"from_member_id\": \"member-uuid-1\",\n  \"to_member_ids\": [\"member-uuid-2\", \"member-uuid-3\"]\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/markups/copy",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "markups", "copy"]
+                },
+                "description": "Menyalin konfigurasi markup kategori dari satu anggota ke anggota downline lainnya."
+              }
+            },
+            {
+              "name": "Get Commission Earnings History",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/agency/commissions",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "agency", "commissions"]
+                },
+                "description": "Daftar riwayat perolehan komisi agen dari transaksi sukses yang dilakukan oleh anggota downline."
+              }
+            }
+          ]
         }
       ]
     },

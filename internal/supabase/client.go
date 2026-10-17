@@ -640,6 +640,50 @@ func (c *Client) HasSecretKey() bool {
 	return c.secretKey != ""
 }
 
+// AdminCreateUser creates a new user via Supabase Auth Admin API (automatically confirmed)
+func (c *Client) AdminCreateUser(payload map[string]interface{}) (*User, error) {
+	if c.secretKey == "" {
+		return nil, errors.New("supabase service role secret key is required for admin user operations")
+	}
+
+	reqURL := fmt.Sprintf("%s/auth/v1/admin/users", c.url)
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("apikey", c.anonKey)
+	req.Header.Set("Authorization", "Bearer "+c.secretKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("network error creating admin user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("create user failed (%d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	var createdUser User
+	if err := json.Unmarshal(respBytes, &createdUser); err != nil {
+		return nil, fmt.Errorf("failed to decode created user: %w", err)
+	}
+
+	return &createdUser, nil
+}
+
 // AdminUpdateUser updates user details (password, email, metadata) in Supabase Auth via Admin API
 func (c *Client) AdminUpdateUser(userID string, payload map[string]interface{}) (*User, error) {
 	if c.secretKey == "" {

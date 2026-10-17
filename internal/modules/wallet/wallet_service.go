@@ -22,6 +22,7 @@ type WalletService interface {
 	GetPendingTopUps() []*WalletTransaction
 	Refund(caller *supabase.User, token string, req RefundRequest) (*WalletTransaction, *Wallet, error)
 	AdjustBalance(adminUser *supabase.User, token string, req AdjustRequest) (*WalletTransaction, *Wallet, error)
+	CreditCommission(uplineID string, amount float64, orderCode, memberName, prodName string) (*WalletTransaction, error)
 
 	// PIN & Transfer Security
 	SetupPIN(userID, token string, req SetupPINRequest) error
@@ -1006,6 +1007,69 @@ func (s *walletService) AdjustBalance(adminUser *supabase.User, token string, re
 
 	s.repo.AddTransaction(trx)
 	return trx, wal, nil
+}
+
+// CreditCommission credits markup commission into upline's wallet
+func (s *walletService) CreditCommission(uplineID string, amount float64, orderCode, memberName, prodName string) (*WalletTransaction, error) {
+	if uplineID == "" || amount <= 0 {
+		return nil, errors.New("invalid uplineID or amount")
+	}
+
+	title := "Komisi Keagenan"
+	desc := fmt.Sprintf("Komisi transaksi %s dari anggota %s (%s)", prodName, memberName, orderCode)
+
+	// In-memory or direct wallet update
+	wal, _ := s.GetBalance(uplineID, "", "")
+	if wal == nil {
+		wal = s.repo.GetOrCreateWallet(uplineID, "")
+	}
+	balanceBefore := wal.Balance
+	wal.Balance += amount
+	balanceAfter := wal.Balance
+	s.repo.SaveWallet(wal)
+
+	trxCode := fmt.Sprintf("KOM-%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
+	trx := &WalletTransaction{
+		ID:              fmt.Sprintf("com-%d", time.Now().UnixNano()),
+		TransactionCode: trxCode,
+		UserID:          uplineID,
+		Type:            TypeCredit,
+		Category:        CategoryCommission,
+		Amount:          amount,
+		BalanceBefore:   balanceBefore,
+		BalanceAfter:    balanceAfter,
+		Title:           title,
+		Description:     desc,
+		ReferenceID:     orderCode,
+		Status:          "SUCCESS",
+		CreatedAt:       time.Now(),
+	}
+	s.repo.AddTransaction(trx)
+
+	// Persist to Supabase app_wallet_transactions & app_wallets if available
+	if s.sbClient != nil {
+		go func() {
+			record := map[string]interface{}{
+				"transaction_code": trxCode,
+				"user_id":          uplineID,
+				"type":             TypeCredit,
+				"category":         CategoryCommission,
+				"amount":           amount,
+				"balance_before":   balanceBefore,
+				"balance_after":    balanceAfter,
+				"title":            title,
+				"description":      desc,
+				"reference_id":     orderCode,
+				"status":           "SUCCESS",
+			}
+			_, _ = s.sbClient.PostDB("app_wallet_transactions", record, "", "")
+			_, _ = s.sbClient.PatchDB("app_wallets", fmt.Sprintf("user_id=eq.%s", uplineID), map[string]interface{}{
+				"balance": balanceAfter,
+			}, "")
+		}()
+	}
+
+	return trx, nil
 }
 
 func (s *walletService) GetAllWallets() []*Wallet {

@@ -17,6 +17,11 @@ import (
 	"github.com/dede-wandi/server-dewa/internal/supabase"
 )
 
+// AgencyResolver provides upline category markups for downline members
+type AgencyResolver interface {
+	GetUplineMarkupForUser(userID string) (map[string]float64, string, error)
+}
+
 // Service defines domain orchestration for digital product orders
 type Service interface {
 	CreateOrder(user *supabase.User, token string, req CreateOrderRequest) (*Order, error)
@@ -24,6 +29,7 @@ type Service interface {
 	GetOrderDetail(orderCode string) (*Order, error)
 	GetUserOrders(userID string) []*Order
 	GetAllOrders() []*Order
+	SetAgencyResolver(ar AgencyResolver)
 }
 
 type service struct {
@@ -31,6 +37,7 @@ type service struct {
 	walletService  wallet.WalletService
 	productService product.Service
 	sbClient       *supabase.Client
+	agencyResolver AgencyResolver
 }
 
 // NewService constructs a new transaction orchestration service instance
@@ -46,6 +53,10 @@ func NewService(
 		productService: productService,
 		sbClient:       sbClient,
 	}
+}
+
+func (s *service) SetAgencyResolver(ar AgencyResolver) {
+	s.agencyResolver = ar
 }
 
 func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrderRequest) (*Order, error) {
@@ -93,6 +104,25 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 
 	// 3. Tentukan Nominal Bayar & SKU Dispatch (Prepaid vs Postpaid)
 	chargedAmount := prod.Price
+	basePrice := prod.Price
+	markupAmount := 0.0
+	uplineID := ""
+
+	if s.agencyResolver != nil {
+		markups, uID, _ := s.agencyResolver.GetUplineMarkupForUser(user.ID)
+		if uID != "" && len(markups) > 0 {
+			uplineID = uID
+			if m, ok := markups[prod.CategoryID]; ok {
+				markupAmount = m
+			} else if m, ok := markups[strings.ToLower(string(prod.Category))]; ok {
+				markupAmount = m
+			} else if m, ok := markups[strings.ToLower(prod.CategoryType)]; ok {
+				markupAmount = m
+			}
+			chargedAmount = basePrice + markupAmount
+		}
+	}
+
 	sku := strings.TrimSpace(prod.BuyerSKUCode)
 	if sku == "" {
 		sku = strings.TrimSpace(prod.Code)
@@ -139,20 +169,29 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 
 	// 5. Buat Record Order
 	now := time.Now()
+	commStatus := "NONE"
+	if markupAmount > 0 && uplineID != "" {
+		commStatus = "PENDING"
+	}
+
 	order := &Order{
-		ID:              fmt.Sprintf("ord-%d", now.UnixNano()),
-		OrderCode:       orderCode,
-		UserID:          user.ID,
-		UserEmail:       user.Email,
-		ProductCode:     prod.Code,
-		ProductName:     prod.Name,
-		ProductCategory: string(prod.Category),
-		TargetAccount:   target,
-		Price:           chargedAmount,
-		PointsEarned:    prod.PointsReward,
-		Status:          StatusProcessing,
-		WalletTrxCode:   wTrx.TransactionCode,
-		CreatedAt:       now,
+		ID:               fmt.Sprintf("ord-%d", now.UnixNano()),
+		OrderCode:        orderCode,
+		UserID:           user.ID,
+		UserEmail:        user.Email,
+		ProductCode:      prod.Code,
+		ProductName:      prod.Name,
+		ProductCategory:  string(prod.Category),
+		TargetAccount:    target,
+		Price:            chargedAmount,
+		BasePrice:        basePrice,
+		MarkupAmount:     markupAmount,
+		UplineID:         uplineID,
+		CommissionStatus: commStatus,
+		PointsEarned:     prod.PointsReward,
+		Status:           StatusProcessing,
+		WalletTrxCode:    wTrx.TransactionCode,
+		CreatedAt:        now,
 	}
 
 	// 6. Eksekusi Pengiriman ke Provider / Switching PPOB
@@ -234,6 +273,22 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 		order.SerialNumber = vResp.SerialNumber
 		completedAt := time.Now()
 		order.CompletedAt = &completedAt
+
+		// Kreditkan komisi markup ke agen upline
+		if order.MarkupAmount > 0 && order.UplineID != "" && order.CommissionStatus != "CREDITED" {
+			userName := user.Email
+			if user.UserMetadata != nil {
+				if n, ok := user.UserMetadata["name"].(string); ok && n != "" {
+					userName = n
+				}
+			}
+			if _, comErr := s.walletService.CreditCommission(order.UplineID, order.MarkupAmount, order.OrderCode, userName, order.ProductName); comErr == nil {
+				order.CommissionStatus = "CREDITED"
+				log.Printf("💰 [COMMISSION SUCCESS] Komisi Rp %.0f berhasil dikreditkan ke agen upline %s untuk order %s", order.MarkupAmount, order.UplineID, order.OrderCode)
+			} else {
+				log.Printf("⚠️ [COMMISSION WARNING] Gagal mengkreditkan komisi ke upline %s: %v", order.UplineID, comErr)
+			}
+		}
 	} else {
 		// PENDING / PROCESSING (Menunggu Serial Number dari switching atau webhook)
 		order.Status = StatusProcessing
