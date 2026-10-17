@@ -114,9 +114,13 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 			uplineID = uID
 			if m, ok := markups[prod.CategoryID]; ok {
 				markupAmount = m
+			} else if m, ok := markups[strings.ToLower(prod.Brand)]; ok {
+				markupAmount = m
 			} else if m, ok := markups[strings.ToLower(string(prod.Category))]; ok {
 				markupAmount = m
 			} else if m, ok := markups[strings.ToLower(prod.CategoryType)]; ok {
+				markupAmount = m
+			} else if m, ok := markups[strings.ToLower(prod.CategoryName)]; ok {
 				markupAmount = m
 			}
 			chargedAmount = basePrice + markupAmount

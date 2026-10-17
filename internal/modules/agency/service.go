@@ -637,6 +637,14 @@ func (s *service) CopyMarkups(agentID string, req CopyMarkupsRequest) error {
 	return nil
 }
 
+type dbCategory struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Slug     string  `json:"slug"`
+	Type     string  `json:"type"`
+	ParentID *string `json:"parent_id"`
+}
+
 func (s *service) GetUplineMarkupForUser(userID string) (map[string]float64, string, error) {
 	if userID == "" {
 		return nil, "", nil
@@ -665,14 +673,81 @@ func (s *service) GetUplineMarkupForUser(userID string) (map[string]float64, str
 		return nil, "", nil
 	}
 
-	// Fetch member markups
+	// 1. Ambil seluruh kategori untuk pemetaan hirarki (Parent -> Children)
+	var allCategories []dbCategory
+	if s.sbClient != nil {
+		if catBytes, err := s.sbClient.GetDB("app_categories", "select=id,name,slug,type,parent_id", ""); err == nil {
+			_ = json.Unmarshal(catBytes, &allCategories)
+		}
+	}
+
+	catByID := make(map[string]dbCategory)
+	childrenByParent := make(map[string][]string)
+	for _, c := range allCategories {
+		catByID[c.ID] = c
+		if c.ParentID != nil && *c.ParentID != "" {
+			childrenByParent[*c.ParentID] = append(childrenByParent[*c.ParentID], c.ID)
+		}
+	}
+
+	// 2. Fetch member markups & default markups agen
 	memberMarkups, _ := s.GetMemberMarkups(uplineID, userID)
+	defaultMarkups, _ := s.GetDefaultMarkups(uplineID)
+
 	markupMap := make(map[string]float64)
 
+	applyMarkupRecursive := func(catID string, amt float64) {
+		markupMap[catID] = amt
+		if c, ok := catByID[catID]; ok {
+			if c.Name != "" {
+				markupMap[strings.ToLower(c.Name)] = amt
+			}
+			if c.Slug != "" {
+				markupMap[strings.ToLower(c.Slug)] = amt
+			}
+			if c.Type != "" {
+				markupMap[strings.ToLower(c.Type)] = amt
+			}
+		}
+
+		// Propagate ke semua subkategori / anak kategori
+		var queue []string
+		queue = append(queue, childrenByParent[catID]...)
+		for len(queue) > 0 {
+			currChildID := queue[0]
+			queue = queue[1:]
+
+			if _, exists := markupMap[currChildID]; !exists {
+				markupMap[currChildID] = amt
+			}
+			if childCat, ok := catByID[currChildID]; ok {
+				if childCat.Name != "" {
+					markupMap[strings.ToLower(childCat.Name)] = amt
+				}
+				if childCat.Slug != "" {
+					markupMap[strings.ToLower(childCat.Slug)] = amt
+				}
+				if childCat.Type != "" {
+					markupMap[strings.ToLower(childCat.Type)] = amt
+				}
+			}
+			queue = append(queue, childrenByParent[currChildID]...)
+		}
+	}
+
+	// A. Terapkan custom markups member terlebih dahulu
 	for _, m := range memberMarkups {
-		markupMap[m.CategoryID] = m.MarkupAmount
-		if m.CategoryName != "" {
-			markupMap[strings.ToLower(m.CategoryName)] = m.MarkupAmount
+		if m != nil && m.MarkupAmount > 0 {
+			applyMarkupRecursive(m.CategoryID, m.MarkupAmount)
+		}
+	}
+
+	// B. Terapkan default markups agen untuk kategori yang belum diset
+	for _, dm := range defaultMarkups {
+		if dm != nil && dm.MarkupAmount > 0 {
+			if _, exists := markupMap[dm.CategoryID]; !exists {
+				applyMarkupRecursive(dm.CategoryID, dm.MarkupAmount)
+			}
 		}
 	}
 

@@ -186,9 +186,13 @@ func (h *Handler) ListUserProducts(w http.ResponseWriter, r *http.Request) {
 						markup := 0.0
 						if m, ok := markups[p.CategoryID]; ok {
 							markup = m
+						} else if m, ok := markups[strings.ToLower(p.Brand)]; ok {
+							markup = m
 						} else if m, ok := markups[strings.ToLower(string(p.Category))]; ok {
 							markup = m
 						} else if m, ok := markups[strings.ToLower(p.CategoryType)]; ok {
+							markup = m
+						} else if m, ok := markups[strings.ToLower(p.CategoryName)]; ok {
 							markup = m
 						}
 						pCopy.OriginalPrice = p.Price
@@ -235,9 +239,13 @@ func (h *Handler) GetUserProductDetail(w http.ResponseWriter, r *http.Request) {
 					markup := 0.0
 					if m, ok := markups[p.CategoryID]; ok {
 						markup = m
+					} else if m, ok := markups[strings.ToLower(p.Brand)]; ok {
+						markup = m
 					} else if m, ok := markups[strings.ToLower(string(p.Category))]; ok {
 						markup = m
 					} else if m, ok := markups[strings.ToLower(p.CategoryType)]; ok {
+						markup = m
+					} else if m, ok := markups[strings.ToLower(p.CategoryName)]; ok {
 						markup = m
 					}
 					pCopy.OriginalPrice = p.Price
