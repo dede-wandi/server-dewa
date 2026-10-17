@@ -333,6 +333,7 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 		CategoryName:   categoryName,
 		Category:       ProductCategory(strings.ToLower(catTag)),
 		VendorCode:     vendorCode,
+		Vendor:         vendorCode,
 		BuyerSKUCode:   buyerSKU,
 		InquirySKUCode: inqSKU,
 		Code:           finalCode,

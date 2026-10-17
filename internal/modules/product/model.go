@@ -22,6 +22,7 @@ type Product struct {
 	CategoryType  string          `json:"category_type,omitempty"`   // Tipe kategori: pulsa, data, pln, emoney, game, pdam
 	Category      ProductCategory `json:"category"`                  // pulsa, data, pln, emoney, game
 	VendorCode    string          `json:"vendor_code"`               // DIGIFLAZZ, IAK, SERPUL, MANUAL
+	Vendor        string          `json:"vendor"`                    // Alias vendor untuk kompatibilitas frontend
 	BuyerSKUCode  string          `json:"buyer_sku_code"`            // Kode produk bayar dari vendor (e.g. BPDAM177 / FIBP14)
 	InquirySKUCode string         `json:"inquiry_sku_code,omitempty"`// Kode produk cek/inquiry (e.g. CPDAM177) jika pascabayar
 	Code          string          `json:"code"`                      // Kode unik sistem DewaCell (e.g. FIBP14)

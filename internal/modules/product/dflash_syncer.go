@@ -352,6 +352,11 @@ func (s *DFlashSyncer) SyncCatalog(sbClient *supabase.Client, repo Repository) (
 
 	// 3. Bandingkan dan update produk yang terdaftar di DFLASH
 	for _, p := range dbProducts {
+		// Lewati produk MANUAL! Produk manual dikelola sendiri oleh admin dan tidak boleh ditimpa DFLASH
+		if strings.ToUpper(strings.TrimSpace(p.VendorCode)) == "MANUAL" {
+			continue
+		}
+
 		sku := strings.ToUpper(strings.TrimSpace(p.BuyerSKUCode))
 		if sku == "" {
 			sku = strings.ToUpper(strings.TrimSpace(p.Code))

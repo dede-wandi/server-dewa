@@ -264,6 +264,7 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 					CategoryID:     dp.CategoryID,
 					CategoryType:   catType,
 					VendorCode:     vendorCode,
+					Vendor:         vendorCode,
 					BuyerSKUCode:   dp.BuyerSKUCode,
 					InquirySKUCode: dp.InquirySKUCode,
 					Code:           code,
