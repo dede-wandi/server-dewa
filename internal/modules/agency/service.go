@@ -264,14 +264,6 @@ func (s *service) GetDashboard(userID, defaultName string) (*AgencyDashboardResp
 }
 
 func (s *service) ListMembers(agentID string) ([]*AgencyMember, error) {
-	s.mu.RLock()
-	cached := s.membersByAgent[agentID]
-	s.mu.RUnlock()
-
-	if len(cached) > 0 {
-		return cached, nil
-	}
-
 	if s.sbClient != nil {
 		filter := fmt.Sprintf("agent_id=eq.%s&order=joined_at.desc", agentID)
 		if respBytes, err := s.sbClient.GetDB("agency_members", "select=*&"+filter, ""); err == nil {
@@ -286,6 +278,13 @@ func (s *service) ListMembers(agentID string) ([]*AgencyMember, error) {
 				return list, nil
 			}
 		}
+	}
+
+	s.mu.RLock()
+	cached := s.membersByAgent[agentID]
+	s.mu.RUnlock()
+	if len(cached) > 0 {
+		return cached, nil
 	}
 
 	return []*AgencyMember{}, nil
@@ -322,9 +321,8 @@ func (s *service) RegisterMember(agentID string, req RegisterMemberRequest) (*Ag
 	// Format nomor HP ke 08xxxx
 	cleanPhone := strings.ReplaceAll(phone, "-", "")
 	cleanPhone = strings.ReplaceAll(cleanPhone, " ", "")
-	if strings.HasPrefix(cleanPhone, "+62") {
-		cleanPhone = "0" + cleanPhone[3:]
-	} else if strings.HasPrefix(cleanPhone, "62") {
+	cleanPhone = strings.ReplaceAll(cleanPhone, "+", "")
+	if strings.HasPrefix(cleanPhone, "62") {
 		cleanPhone = "0" + cleanPhone[2:]
 	}
 
@@ -333,19 +331,67 @@ func (s *service) RegisterMember(agentID string, req RegisterMemberRequest) (*Ag
 		email = fmt.Sprintf("%s@member.dewacell.com", cleanPhone)
 	}
 
-	var memberUserID string
-
-	// Buat user di Supabase Auth via Admin API atau SignUp
-	userMetadata := map[string]interface{}{
-		"name":          name,
-		"phone":         cleanPhone,
-		"business_name": req.BusinessName,
-		"upline_id":     agentID,
-		"role":          "user",
+	bName := strings.TrimSpace(req.BusinessName)
+	if bName == "" {
+		bName = name
 	}
 
+	var newMember *AgencyMember
+	var memberUserID string
+	var lastErr error
+
 	if s.sbClient != nil {
-		if s.sbClient.HasSecretKey() {
+		// 1. Prioritas Utama: Panggil PostgreSQL RPC create_agency_member_user (Direct Database Creation)
+		rpcPayload := map[string]interface{}{
+			"p_agent_id":      agentID,
+			"p_name":          name,
+			"p_phone":         cleanPhone,
+			"p_password":      password,
+			"p_business_name": bName,
+		}
+
+		rpcRespBytes, err := s.sbClient.CallRPC("create_agency_member_user", rpcPayload, "")
+		if err == nil {
+			var rpcRes struct {
+				Success     bool   `json:"success"`
+				ID          string `json:"id"`
+				AgentID     string `json:"agent_id"`
+				MemberID    string `json:"member_id"`
+				MemberName  string `json:"member_name"`
+				MemberPhone string `json:"member_phone"`
+				Status      string `json:"status"`
+				JoinedAt    string `json:"joined_at"`
+			}
+			if err := json.Unmarshal(rpcRespBytes, &rpcRes); err == nil && rpcRes.MemberID != "" {
+				parsedJoinedAt, _ := time.Parse(time.RFC3339, rpcRes.JoinedAt)
+				if parsedJoinedAt.IsZero() {
+					parsedJoinedAt = time.Now()
+				}
+				newMember = &AgencyMember{
+					ID:          rpcRes.ID,
+					AgentID:     rpcRes.AgentID,
+					MemberID:    rpcRes.MemberID,
+					MemberName:  rpcRes.MemberName,
+					MemberPhone: rpcRes.MemberPhone,
+					Status:      rpcRes.Status,
+					JoinedAt:    parsedJoinedAt,
+				}
+				memberUserID = rpcRes.MemberID
+			}
+		} else {
+			lastErr = err
+			log.Printf("[RegisterMember] CallRPC create_agency_member_user: %v", err)
+		}
+
+		// 2. Fallback: AdminCreateUser jika secret key tersedia
+		if newMember == nil && s.sbClient.HasSecretKey() {
+			userMetadata := map[string]interface{}{
+				"name":          name,
+				"phone":         cleanPhone,
+				"business_name": bName,
+				"upline_id":     agentID,
+				"role":          "user",
+			}
 			createUserPayload := map[string]interface{}{
 				"email":         email,
 				"password":      password,
@@ -355,64 +401,44 @@ func (s *service) RegisterMember(agentID string, req RegisterMemberRequest) (*Ag
 			newUser, err := s.sbClient.AdminCreateUser(createUserPayload)
 			if err == nil && newUser != nil {
 				memberUserID = newUser.ID
-			}
-		}
-
-		if memberUserID == "" {
-			// Fallback: daftarkan via SignUp menggunakan Supabase anon key
-			signUpResp, err := s.sbClient.SignUp(email, password, userMetadata)
-			if err == nil && signUpResp != nil && signUpResp.User.ID != "" {
-				memberUserID = signUpResp.User.ID
-			} else if err != nil {
-				log.Printf("[RegisterMember] SignUp info: %v", err)
-			}
-		}
-	}
-
-	if memberUserID == "" {
-		memberUserID = fmt.Sprintf("mem-%d", time.Now().UnixNano())
-	}
-
-	// Simpan ke agency_members
-	now := time.Now()
-	newMember := &AgencyMember{
-		ID:          fmt.Sprintf("agm-%d", now.UnixNano()),
-		AgentID:     agentID,
-		MemberID:    memberUserID,
-		MemberName:  name,
-		MemberPhone: cleanPhone,
-		Status:      "ACTIVE",
-		JoinedAt:    now,
-	}
-
-	if s.sbClient != nil {
-		record := map[string]interface{}{
-			"agent_id":     agentID,
-			"member_id":    memberUserID,
-			"member_name":  name,
-			"member_phone": cleanPhone,
-			"status":       "ACTIVE",
-		}
-		if respBytes, err := s.sbClient.PostDB("agency_members", record, "return=representation", ""); err == nil {
-			var inserted []*AgencyMember
-			if err := json.Unmarshal(respBytes, &inserted); err == nil && len(inserted) > 0 {
-				newMember = inserted[0]
+				record := map[string]interface{}{
+					"agent_id":     agentID,
+					"member_id":    memberUserID,
+					"member_name":  name,
+					"member_phone": cleanPhone,
+					"status":       "ACTIVE",
+				}
+				if respBytes, err := s.sbClient.PostDB("agency_members", record, "return=representation", ""); err == nil {
+					var inserted []*AgencyMember
+					if err := json.Unmarshal(respBytes, &inserted); err == nil && len(inserted) > 0 {
+						newMember = inserted[0]
+					}
+				}
 			}
 		}
 	}
 
-	// Simpan custom markups yang diset langsung saat registrasi
+	// Jika masih gagal ke database, tolak pendaftaran dan kembalikan error jelas
+	if newMember == nil || memberUserID == "" {
+		errMsg := "Gagal menyimpan akun ke database."
+		if lastErr != nil {
+			errMsg = fmt.Sprintf("Gagal menyimpan akun ke database: %v. Pastikan migration 26 sudah dijalankan di Supabase.", lastErr)
+		}
+		return nil, errors.New(errMsg)
+	}
+
+	// Simpan custom markups jika ada
 	if len(req.Markups) > 0 {
 		_ = s.UpdateMemberMarkups(agentID, memberUserID, req.Markups)
 	}
 
-	// Update local cache
+	// Update local cache dari data DB yang valid
 	s.mu.Lock()
 	s.memberUpline[memberUserID] = agentID
 	s.membersByAgent[agentID] = append([]*AgencyMember{newMember}, s.membersByAgent[agentID]...)
 	s.mu.Unlock()
 
-	log.Printf("✅ [AGENCY] Anggota baru %s (%s) berhasil didaftarkan oleh agen %s", name, cleanPhone, agentID)
+	log.Printf("✅ [AGENCY] Anggota baru %s (%s) BERHASIL TERSIMPAN DI DATABASE oleh agen %s", name, cleanPhone, agentID)
 	return newMember, nil
 }
 
