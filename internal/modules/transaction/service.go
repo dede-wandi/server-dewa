@@ -436,12 +436,23 @@ func mapWalletTrxToOrder(trx *wallet.WalletTransaction) *Order {
 		}
 	}
 
-	// Hilangkan prefix legacy seperti ORD-, TRX-, REF- agar seragam numerik murni
-	for _, pfx := range []string{"ORD-", "TRX-", "TOP-", "REF-", "ADJ-", "TFO-", "TFI-"} {
+	// Hilangkan prefix legacy seperti ORD-, TRX-, TOP-, VA-FUNDCREDIT-, VA- agar seragam numerik murni
+	for _, pfx := range []string{"VA-FUNDCREDIT-", "VA-", "ORD-", "TRX-", "TOP-", "REF-", "ADJ-", "TFO-", "TFI-"} {
 		if strings.HasPrefix(strings.ToUpper(orderCode), pfx) {
 			orderCode = strings.ReplaceAll(orderCode[len(pfx):], "-", "")
 			break
 		}
+	}
+
+	// Pastikan seragam angka murni jika masih ada karakter non-digit
+	var digitsOnly strings.Builder
+	for _, c := range orderCode {
+		if c >= '0' && c <= '9' {
+			digitsOnly.WriteRune(c)
+		}
+	}
+	if digitsOnly.Len() >= 8 {
+		orderCode = digitsOnly.String()
 	}
 
 	if strings.ToUpper(trx.Category) == "REFUND" || strings.HasPrefix(strings.ToUpper(trx.Title), "REFUND") {

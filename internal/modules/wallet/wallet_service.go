@@ -264,6 +264,13 @@ func (s *walletService) GetHistory(userID string) []*WalletTransaction {
 		}
 	}
 
+	for _, t := range combined {
+		if t != nil {
+			t.ReferenceID = cleanCodeTo16Digits(t.ReferenceID, t.CreatedAt)
+			t.TransactionCode = cleanCodeTo16Digits(t.TransactionCode, t.CreatedAt)
+		}
+	}
+
 	return deduplicateTransactions(combined)
 }
 
@@ -272,7 +279,7 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 		return nil, nil, errors.New("Nominal pembayaran harus lebih besar dari 0")
 	}
 	if req.Title == "" {
-		req.Title = "Pembayaran Transaksi PPOB DewaCell"
+		req.Title = "Pembayaran Transaksi "
 	}
 	if req.Category == "" {
 		req.Category = CategoryPayment
@@ -451,9 +458,13 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 
 				trxCode, _ := rpcRes["transaction_code"].(string)
 				paymentCode, _ := rpcRes["payment_code"].(string)
+
+				cleanTrxCode := cleanCodeTo16Digits(trxCode, time.Now())
+				cleanPaymentCode := cleanCodeTo16Digits(paymentCode, time.Now())
+
 				trx := &WalletTransaction{
 					ID:              fmt.Sprintf("%v", rpcRes["transaction_id"]),
-					TransactionCode: trxCode,
+					TransactionCode: cleanTrxCode,
 					UserID:          userID,
 					Type:            TypeCredit,
 					Category:        CategoryTopup,
@@ -463,12 +474,23 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 					BalanceAfter:    wal.Balance, // Saldo tidak bertambah saat masih PENDING
 					Title:           title,
 					Description:     desc,
-					ReferenceID:     paymentCode,
+					ReferenceID:     cleanPaymentCode,
 					AdminNotes:      notes,
 					Status:          "PENDING",
 					CreatedAt:       time.Now(),
 				}
 				s.repo.AddTransaction(trx)
+
+				// Sinkronkan ke database Supabase agar data tersimpan angka murni 16 digit
+				trxIDStr := fmt.Sprintf("%v", rpcRes["transaction_id"])
+				if s.sbClient != nil && trxIDStr != "" && (cleanPaymentCode != paymentCode || cleanTrxCode != trxCode) {
+					patchData := map[string]interface{}{
+						"transaction_code": cleanTrxCode,
+						"reference_id":     cleanPaymentCode,
+					}
+					_, _ = s.sbClient.PatchDB("app_wallet_transactions", fmt.Sprintf("id=eq.%s", trxIDStr), patchData, "")
+				}
+
 				return trx, wal, nil
 			}
 		}
@@ -1417,4 +1439,34 @@ func (s *walletService) Transfer(caller *supabase.User, token string, req Transf
 	s.repo.AddTransaction(recipientTrx)
 
 	return senderTrx, senderWallet, nil
+}
+
+// cleanCodeTo16Digits memastikan kode transaksi dan nomor pesanan selalu seragam 16 digit angka murni
+func cleanCodeTo16Digits(raw string, defaultTime time.Time) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range raw {
+		if c >= '0' && c <= '9' {
+			b.WriteRune(c)
+		}
+	}
+	digits := b.String()
+	if len(digits) >= 16 {
+		return digits[:16]
+	}
+	dateStr := defaultTime.Format("060102150405")
+	if strings.HasPrefix(dateStr, "010101") || dateStr == "010101000000" {
+		dateStr = time.Now().Format("060102150405")
+	}
+	if len(digits) >= 8 {
+		needed := 16 - len(digits)
+		if needed > 0 && needed <= len(dateStr) {
+			return dateStr[:needed] + digits
+		}
+		return digits
+	}
+	return fmt.Sprintf("%s%04d", dateStr, rand.Intn(9000)+1000)
 }
