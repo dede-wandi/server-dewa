@@ -134,15 +134,43 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cleanEmail := strings.ToLower(strings.TrimSpace(req.Email))
-	if cleanEmail == "" || !strings.Contains(cleanEmail, "@") {
+	rawIdentifier := strings.TrimSpace(req.Email)
+	if rawIdentifier == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "error",
 			"code":    http.StatusBadRequest,
-			"message": "Format alamat email tidak valid",
+			"message": "Nomor HP atau Email wajib diisi",
 		})
 		return
+	}
+
+	cleanIdentifier := strings.ToLower(rawIdentifier)
+	targetEmail := cleanIdentifier
+	isPhoneLogin := false
+
+	// Jika pengguna memasukkan nomor HP (tidak mengandung '@')
+	if !strings.Contains(cleanIdentifier, "@") {
+		isPhoneLogin = true
+		cleanPhone := strings.ReplaceAll(cleanIdentifier, "-", "")
+		cleanPhone = strings.ReplaceAll(cleanPhone, " ", "")
+		cleanPhone = strings.ReplaceAll(cleanPhone, "+", "")
+		if strings.HasPrefix(cleanPhone, "62") {
+			cleanPhone = "0" + cleanPhone[2:]
+		}
+
+		if len(cleanPhone) < 8 {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "error",
+				"code":    http.StatusBadRequest,
+				"message": "Nomor HP tidak valid (minimal 8 angka)",
+			})
+			return
+		}
+
+		// Anggota downline didaftarkan dengan akun email internal 08xxxx@member.dewacell.com
+		targetEmail = fmt.Sprintf("%s@member.dewacell.com", cleanPhone)
 	}
 
 	if req.Password == "" {
@@ -155,16 +183,24 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authResp, err := h.sb.SignIn(cleanEmail, req.Password)
+	authResp, err := h.sb.SignIn(targetEmail, req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 
-		// Evaluasi penyebab kegagalan: email belum terdaftar vs password keliru
 		errMsg := "Email atau password yang Anda masukkan salah"
-		if !h.sb.IsEmailRegistered(cleanEmail) {
-			errMsg = "Email tidak terdaftar di sistem. Silakan periksa kembali email Anda atau lakukan pendaftaran."
+		if isPhoneLogin {
+			errMsg = "Nomor HP atau password yang Anda masukkan salah"
+			if !h.sb.IsEmailRegistered(targetEmail) {
+				errMsg = "Nomor HP belum terdaftar sebagai anggota. Silakan hubungi agen Anda untuk didaftarkan."
+			} else {
+				errMsg = "Password yang Anda masukkan salah. Silakan coba lagi."
+			}
 		} else {
-			errMsg = "Password yang Anda masukkan salah. Silakan coba lagi."
+			if !h.sb.IsEmailRegistered(targetEmail) {
+				errMsg = "Email tidak terdaftar di sistem. Silakan periksa kembali email Anda atau lakukan pendaftaran."
+			} else {
+				errMsg = "Password yang Anda masukkan salah. Silakan coba lagi."
+			}
 		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -302,7 +338,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[AuthHandler] Note: Gagal menyimpan user_login_logs ke DB (%v)", err2)
 			}
 		}
-	}(authResp.User.ID, cleanEmail, deviceID, deviceName, deviceOS, location, clientIP, userAgent, authResp.AccessToken)
+	}(authResp.User.ID, targetEmail, deviceID, deviceName, deviceOS, location, clientIP, userAgent, authResp.AccessToken)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
