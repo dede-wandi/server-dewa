@@ -3,6 +3,7 @@ package agency
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/dede-wandi/server-dewa/internal/middleware"
 	"github.com/dede-wandi/server-dewa/internal/modules/wallet"
@@ -56,6 +57,29 @@ func (h *Handler) Routes() chi.Router {
 	return r
 }
 
+func extractUserAccountName(user *supabase.User) string {
+	if user == nil {
+		return "Akun Saya"
+	}
+	if user.UserMetadata != nil {
+		for _, key := range []string{"full_name", "display_name", "name", "business_name"} {
+			if val, ok := user.UserMetadata[key].(string); ok && strings.TrimSpace(val) != "" {
+				return strings.TrimSpace(val)
+			}
+		}
+	}
+	if user.Email != "" {
+		parts := strings.Split(user.Email, "@")
+		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	if user.Phone != "" {
+		return user.Phone
+	}
+	return "Akun Saya"
+}
+
 func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	user := middleware.GetUserFromContext(r.Context())
@@ -68,7 +92,8 @@ func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.service.GetDashboard(user.ID)
+	userName := extractUserAccountName(user)
+	data, err := h.service.GetDashboard(user.ID, userName)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -92,13 +117,7 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userName := ""
-	if user.UserMetadata != nil {
-		if name, ok := user.UserMetadata["name"].(string); ok {
-			userName = name
-		}
-	}
-
+	userName := extractUserAccountName(user)
 	prof, err := h.service.GetOrCreateProfile(user.ID, userName)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

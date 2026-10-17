@@ -18,7 +18,7 @@ import (
 type Service interface {
 	GetOrCreateProfile(userID, defaultName string) (*AgencyProfile, error)
 	UpdateProfile(userID string, req UpdateProfileRequest) (*AgencyProfile, error)
-	GetDashboard(userID string) (*AgencyDashboardResponse, error)
+	GetDashboard(userID, defaultName string) (*AgencyDashboardResponse, error)
 	ListMembers(agentID string) ([]*AgencyMember, error)
 	GetMember(agentID, memberID string) (*AgencyMember, error)
 	RegisterMember(agentID string, req RegisterMemberRequest) (*AgencyMember, error)
@@ -109,10 +109,23 @@ func (s *service) syncFromDatabase() {
 }
 
 func (s *service) GetOrCreateProfile(userID, defaultName string) (*AgencyProfile, error) {
+	cleanName := strings.TrimSpace(defaultName)
+
 	s.mu.RLock()
 	p, ok := s.profiles[userID]
 	s.mu.RUnlock()
 	if ok && p != nil {
+		if cleanName != "" && (p.BusinessName == "" || p.BusinessName == "Agen Mitra DewaCell" || p.BusinessName == "Mitra Agen DewaCell") {
+			p.BusinessName = cleanName
+			p.UpdatedAt = time.Now()
+			if s.sbClient != nil {
+				filter := fmt.Sprintf("user_id=eq.%s", userID)
+				_, _ = s.sbClient.PatchDB("agency_profiles", filter, map[string]interface{}{
+					"business_name": cleanName,
+					"updated_at":    p.UpdatedAt,
+				}, "")
+			}
+		}
 		return p, nil
 	}
 
@@ -122,18 +135,27 @@ func (s *service) GetOrCreateProfile(userID, defaultName string) (*AgencyProfile
 		if respBytes, err := s.sbClient.GetDB("agency_profiles", "select=*&"+filter, ""); err == nil {
 			var list []*AgencyProfile
 			if err := json.Unmarshal(respBytes, &list); err == nil && len(list) > 0 {
+				existing := list[0]
+				if cleanName != "" && (existing.BusinessName == "" || existing.BusinessName == "Agen Mitra DewaCell" || existing.BusinessName == "Mitra Agen DewaCell") {
+					existing.BusinessName = cleanName
+					existing.UpdatedAt = time.Now()
+					_, _ = s.sbClient.PatchDB("agency_profiles", filter, map[string]interface{}{
+						"business_name": cleanName,
+						"updated_at":    existing.UpdatedAt,
+					}, "")
+				}
 				s.mu.Lock()
-				s.profiles[userID] = list[0]
+				s.profiles[userID] = existing
 				s.mu.Unlock()
-				return list[0], nil
+				return existing, nil
 			}
 		}
 	}
 
 	// Auto-create new agency profile
-	bName := strings.TrimSpace(defaultName)
+	bName := cleanName
 	if bName == "" {
-		bName = "Agen Mitra DewaCell"
+		bName = "Akun Agen"
 	}
 
 	randDigits := fmt.Sprintf("%04d", rand.Intn(9000)+1000)
@@ -193,8 +215,8 @@ func (s *service) UpdateProfile(userID string, req UpdateProfileRequest) (*Agenc
 	return prof, nil
 }
 
-func (s *service) GetDashboard(userID string) (*AgencyDashboardResponse, error) {
-	prof, err := s.GetOrCreateProfile(userID, "")
+func (s *service) GetDashboard(userID, defaultName string) (*AgencyDashboardResponse, error) {
+	prof, err := s.GetOrCreateProfile(userID, defaultName)
 	if err != nil {
 		return nil, err
 	}
