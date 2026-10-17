@@ -192,5 +192,51 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 3. Berikan hak akses eksekusi ke anon, authenticated, dan service_role
 GRANT EXECUTE ON FUNCTION public.create_agency_member_user(UUID, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated, service_role;
 
--- 4. Reload PostgREST Cache
+-- 4. FUNCTION: Ambil Daftar Anggota Downline per Agen (Bypass RLS via Security Definer)
+CREATE OR REPLACE FUNCTION public.get_agency_members_by_agent(p_agent_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+    v_list JSONB;
+BEGIN
+    SELECT COALESCE(jsonb_agg(
+        jsonb_build_object(
+            'id', m.id,
+            'agent_id', m.agent_id,
+            'member_id', m.member_id,
+            'member_name', m.member_name,
+            'member_phone', m.member_phone,
+            'status', m.status,
+            'joined_at', m.joined_at
+        ) ORDER BY m.joined_at DESC
+    ), '[]'::jsonb) INTO v_list
+    FROM public.agency_members m
+    WHERE m.agent_id = p_agent_id;
+
+    RETURN v_list;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.get_agency_members_by_agent(UUID) TO anon, authenticated, service_role;
+
+-- 5. Kebijakan RLS & Permission Akses Tabel
+ALTER TABLE public.agency_members ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Full Access agency_members" ON public.agency_members;
+CREATE POLICY "Full Access agency_members" ON public.agency_members
+FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+GRANT ALL ON TABLE public.agency_members TO anon, authenticated, service_role;
+
+ALTER TABLE public.agency_profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Full Access agency_profiles" ON public.agency_profiles;
+CREATE POLICY "Full Access agency_profiles" ON public.agency_profiles
+FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+GRANT ALL ON TABLE public.agency_profiles TO anon, authenticated, service_role;
+
+ALTER TABLE public.agent_category_markups ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Full Access agent_category_markups" ON public.agent_category_markups;
+CREATE POLICY "Full Access agent_category_markups" ON public.agent_category_markups
+FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+GRANT ALL ON TABLE public.agent_category_markups TO anon, authenticated, service_role;
+
+-- 6. Reload PostgREST Cache
 NOTIFY pgrst, 'reload schema';
+

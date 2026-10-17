@@ -265,10 +265,28 @@ func (s *service) GetDashboard(userID, defaultName string) (*AgencyDashboardResp
 
 func (s *service) ListMembers(agentID string) ([]*AgencyMember, error) {
 	if s.sbClient != nil {
+		// 1. Coba RPC get_agency_members_by_agent (Bypass RLS, data langsung dari DB)
+		rpcPayload := map[string]interface{}{
+			"p_agent_id": agentID,
+		}
+		if respBytes, err := s.sbClient.CallRPC("get_agency_members_by_agent", rpcPayload, ""); err == nil {
+			var list []*AgencyMember
+			if err := json.Unmarshal(respBytes, &list); err == nil && len(list) > 0 {
+				s.mu.Lock()
+				s.membersByAgent[agentID] = list
+				for _, m := range list {
+					s.memberUpline[m.MemberID] = agentID
+				}
+				s.mu.Unlock()
+				return list, nil
+			}
+		}
+
+		// 2. Direct PostgREST query
 		filter := fmt.Sprintf("agent_id=eq.%s&order=joined_at.desc", agentID)
 		if respBytes, err := s.sbClient.GetDB("agency_members", "select=*&"+filter, ""); err == nil {
 			var list []*AgencyMember
-			if err := json.Unmarshal(respBytes, &list); err == nil {
+			if err := json.Unmarshal(respBytes, &list); err == nil && len(list) > 0 {
 				s.mu.Lock()
 				s.membersByAgent[agentID] = list
 				for _, m := range list {
