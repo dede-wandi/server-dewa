@@ -123,12 +123,13 @@ func (s *service) CreateOrder(user *supabase.User, token string, req CreateOrder
 
 	// 4. Potong Saldo Atomik via WalletService
 	payReq := wallet.PayRequest{
-		Amount:      chargedAmount,
-		Category:    wallet.CategoryPayment,
-		Title:       prod.Name,
-		Description: target,
-		ReferenceID: orderCode,
-		PIN:         req.PIN,
+		Amount:       chargedAmount,
+		Category:     wallet.CategoryPayment,
+		Title:        prod.Name,
+		Description:  target,
+		ReferenceID:  orderCode,
+		PIN:          req.PIN,
+		PointsReward: prod.PointsReward,
 	}
 
 	wTrx, _, err := s.walletService.Pay(user.ID, user.Email, token, payReq)

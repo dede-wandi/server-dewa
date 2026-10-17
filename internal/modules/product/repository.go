@@ -226,8 +226,8 @@ func (r *CachedRepository) SyncFromSupabase(sbClient *supabase.Client) (int, err
 					brand = extractBrand(dp.Name)
 				}
 				ptsReward := dp.PointsReward
-				if ptsReward <= 0 {
-					ptsReward = int64(dp.Price * 0.01)
+				if ptsReward < 0 {
+					ptsReward = 0
 				}
 				vendorCode := dp.VendorCode
 				if vendorCode == "" {

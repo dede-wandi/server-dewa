@@ -335,14 +335,16 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 				}
 				s.repo.AddTransaction(trx)
 
-				// Log point reward
-				s.pointService.AddRewardPoints(
-					userID,
-					int64(req.Amount*0.01),
-					fmt.Sprintf("Cashback Belanja: %s", req.Title),
-					fmt.Sprintf("Reward 1%% otomatis dari transaksi %s", trxCode),
-					trxCode,
-				)
+				// Log point reward jika produk memiliki reward poin
+				if req.PointsReward > 0 {
+					s.pointService.AddRewardPoints(
+						userID,
+						req.PointsReward,
+						fmt.Sprintf("Reward Poin: %s", req.Title),
+						fmt.Sprintf("Reward poin produk transaksi %s", trxCode),
+						trxCode,
+					)
+				}
 
 				return trx, wal, nil
 			} else if err == nil && rpcRes["message"] != nil {
@@ -387,13 +389,15 @@ func (s *walletService) Pay(userID, email, token string, req PayRequest) (*Walle
 	}
 	s.repo.AddTransaction(trx)
 
-	s.pointService.AddRewardPoints(
-		userID,
-		int64(req.Amount*0.01),
-		fmt.Sprintf("Cashback Belanja: %s", req.Title),
-		fmt.Sprintf("Reward 1%% otomatis dari transaksi %s", trxCode),
-		trxCode,
-	)
+	if req.PointsReward > 0 {
+		s.pointService.AddRewardPoints(
+			userID,
+			req.PointsReward,
+			fmt.Sprintf("Reward Poin: %s", req.Title),
+			fmt.Sprintf("Reward poin produk transaksi %s", trxCode),
+			trxCode,
+		)
+	}
 
 	return trx, wal, nil
 }
@@ -422,10 +426,10 @@ func (s *walletService) TopUp(userID, email, token string, req TopUpRequest) (*W
 	notes := strings.TrimSpace(req.Notes)
 
 	title := fmt.Sprintf("Permintaan Top Up Saldo via %s", channel)
-	desc := "Menunggu pembayaran dan verifikasi admin / callback payment gateway"
+	desc := "Menunggu pembayaran dan verifikasi"
 	if channel == "fund_credit" {
-		title = "Permintaan Top Up Saldo (Fund Credit)"
-		desc = "Menunggu transfer manual dan verifikasi Super Admin (Fund Credit)"
+		title = "Permintaan Top Up Saldo"
+		desc = "Menunggu transfer manual dan verifikasi"
 	}
 
 	// 1. Try Supabase RPC request_app_wallet_topup (returns status PENDING)
@@ -652,7 +656,6 @@ func (s *walletService) RejectTopUp(adminUser *supabase.User, token string, tran
 
 	return trx, nil
 }
-
 
 func (s *walletService) GetPendingTopUps() []*WalletTransaction {
 	return s.repo.GetPendingTopUps()

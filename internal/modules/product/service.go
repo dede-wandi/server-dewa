@@ -314,10 +314,8 @@ func (s *service) CreateProduct(req CreateProductRequest) (*Product, error) {
 	}
 
 	ptsReward := int64(0)
-	if req.PointsReward != nil {
+	if req.PointsReward != nil && *req.PointsReward > 0 {
 		ptsReward = *req.PointsReward
-	} else if req.Price > 0 {
-		ptsReward = int64(req.Price * 0.01) // 1% cashback default
 	}
 
 	inqSKU := strings.TrimSpace(req.InquirySKUCode)

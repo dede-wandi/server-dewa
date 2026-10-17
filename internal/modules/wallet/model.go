@@ -60,6 +60,7 @@ type PayRequest struct {
 	Category    string  `json:"category"`
 	ReferenceID string  `json:"reference_id"`
 	PIN         string  `json:"pin,omitempty"`
+	PointsReward int64  `json:"points_reward,omitempty"`
 }
 
 // SetupPINRequest represents payload to create wallet PIN for the first time

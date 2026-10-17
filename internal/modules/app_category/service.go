@@ -402,6 +402,12 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 	now := time.Now()
 	newID := newUUID()
 
+	var parentID *string
+	if req.ParentID != nil && strings.TrimSpace(*req.ParentID) != "" {
+		clean := strings.TrimSpace(*req.ParentID)
+		parentID = &clean
+	}
+
 	slug := req.Slug
 	if slug == "" {
 		slug = slugify(req.Name)
@@ -409,18 +415,29 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 
 	code := req.Code
 	if code == "" {
-		code = "cat_" + strings.ReplaceAll(slug, "-", "_")
+		if parentID != nil {
+			parent, err := s.GetCategoryByID(*parentID)
+			if err == nil && parent != nil {
+				code = parent.Code + "_" + strings.ReplaceAll(slug, "-", "_")
+			} else {
+				code = "cat_" + strings.ReplaceAll(slug, "-", "_")
+			}
+		} else {
+			code = "cat_" + strings.ReplaceAll(slug, "-", "_")
+		}
+	}
+
+	// Clamp lengths to match DB VARCHAR limits (code <= 50, slug <= 120)
+	if len(code) > 50 {
+		code = code[:50]
+	}
+	if len(slug) > 120 {
+		slug = slug[:120]
 	}
 
 	isActive := true
 	if req.IsActive != nil {
 		isActive = *req.IsActive
-	}
-
-	var parentID *string
-	if req.ParentID != nil && strings.TrimSpace(*req.ParentID) != "" {
-		clean := strings.TrimSpace(*req.ParentID)
-		parentID = &clean
 	}
 
 	level := req.Level
@@ -486,6 +503,15 @@ func (s *categoryService) CreateCategory(req CreateCategoryRequest) (*AppCategor
 	respBytes, err := s.sbClient.PostDB("app_categories", payload, "return=representation", "")
 	if err != nil {
 		log.Printf("[CategoryService] PostDB failed: %v", err)
+		errStr := err.Error()
+		if strings.Contains(errStr, "23505") || strings.Contains(errStr, "unique constraint") {
+			if strings.Contains(errStr, "app_categories_code_key") {
+				return nil, fmt.Errorf("kode kategori '%s' sudah digunakan oleh kategori lain di database. Silakan gunakan kode unik yang berbeda", newCat.Code)
+			}
+			if strings.Contains(errStr, "app_categories_slug_key") {
+				return nil, fmt.Errorf("slug kategori '%s' sudah digunakan di database. Silakan gunakan nama atau kode kategori yang berbeda", newCat.Slug)
+			}
+		}
 		return nil, fmt.Errorf("gagal menyimpan kategori ke database: %w", err)
 	}
 
@@ -576,6 +602,15 @@ func (s *categoryService) UpdateCategory(id string, req UpdateCategoryRequest) (
 	respBytes, err := s.sbClient.PatchDB("app_categories", queryParams, payload, "")
 	if err != nil {
 		log.Printf("[CategoryService] PatchDB failed: %v", err)
+		errStr := err.Error()
+		if strings.Contains(errStr, "23505") || strings.Contains(errStr, "unique constraint") {
+			if strings.Contains(errStr, "app_categories_code_key") {
+				return nil, fmt.Errorf("kode kategori sudah digunakan oleh kategori lain di database. Silakan gunakan kode unik yang berbeda")
+			}
+			if strings.Contains(errStr, "app_categories_slug_key") {
+				return nil, fmt.Errorf("slug kategori sudah digunakan di database. Silakan gunakan nama atau kode lain")
+			}
+		}
 		return nil, fmt.Errorf("gagal mengupdate kategori di database: %w", err)
 	}
 
