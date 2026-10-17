@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -1040,17 +1041,55 @@ func (s *walletService) CreditCommission(uplineID string, amount float64, orderC
 	title := "Komisi Keagenan"
 	desc := fmt.Sprintf("Komisi transaksi %s dari anggota %s (%s)", prodName, memberName, orderCode)
 
-	// In-memory or direct wallet update
-	wal, _ := s.GetBalance(uplineID, "", "")
-	if wal == nil {
-		wal = s.repo.GetOrCreateWallet(uplineID, "")
+	var trxCode string
+	balanceBefore := 0.0
+	balanceAfter := 0.0
+
+	// 1. Eksekusi via Supabase RPC process_app_wallet_mutation (Atomic, Security Definer)
+	if s.sbClient != nil {
+		rpcPayload := map[string]interface{}{
+			"p_user_id":      uplineID,
+			"p_type":         "CREDIT",
+			"p_category":     "COMMISSION",
+			"p_amount":       amount,
+			"p_title":        title,
+			"p_description":  desc,
+			"p_reference_id": orderCode,
+		}
+
+		if respBytes, err := s.sbClient.CallRPC("process_app_wallet_mutation", rpcPayload, ""); err == nil {
+			var rpcRes struct {
+				Success         bool    `json:"success"`
+				TransactionCode string  `json:"transaction_code"`
+				BalanceBefore   float64 `json:"balance_before"`
+				BalanceAfter    float64 `json:"balance_after"`
+			}
+			if err := json.Unmarshal(respBytes, &rpcRes); err == nil && rpcRes.TransactionCode != "" {
+				trxCode = rpcRes.TransactionCode
+				balanceBefore = rpcRes.BalanceBefore
+				balanceAfter = rpcRes.BalanceAfter
+			}
+		} else {
+			log.Printf("⚠️ [CreditCommission] CallRPC process_app_wallet_mutation error: %v", err)
+		}
 	}
-	balanceBefore := wal.Balance
-	wal.Balance += amount
-	balanceAfter := wal.Balance
+
+	// 2. Sinkronkan ke in-memory repo
+	wal := s.repo.GetOrCreateWallet(uplineID, "")
+	if balanceAfter > 0 {
+		wal.Balance = balanceAfter
+	} else {
+		balanceBefore = wal.Balance
+		wal.Balance += amount
+		balanceAfter = wal.Balance
+	}
 	s.repo.SaveWallet(wal)
 
-	trxCode := fmt.Sprintf("KOM-%s%04d", time.Now().Format("060102150405"), rand.Intn(9000)+1000)
+	if trxCode == "" {
+		now := time.Now()
+		trxCode = fmt.Sprintf("%s%04d", now.Format("060102150405"), (now.Nanosecond()/100000)%9000+1000)
+	}
+
 	trx := &WalletTransaction{
 		ID:              fmt.Sprintf("com-%d", time.Now().UnixNano()),
 		TransactionCode: trxCode,
@@ -1068,29 +1107,7 @@ func (s *walletService) CreditCommission(uplineID string, amount float64, orderC
 	}
 	s.repo.AddTransaction(trx)
 
-	// Persist to Supabase app_wallet_transactions & app_wallets if available
-	if s.sbClient != nil {
-		go func() {
-			record := map[string]interface{}{
-				"transaction_code": trxCode,
-				"user_id":          uplineID,
-				"type":             TypeCredit,
-				"category":         CategoryCommission,
-				"amount":           amount,
-				"balance_before":   balanceBefore,
-				"balance_after":    balanceAfter,
-				"title":            title,
-				"description":      desc,
-				"reference_id":     orderCode,
-				"status":           "SUCCESS",
-			}
-			_, _ = s.sbClient.PostDB("app_wallet_transactions", record, "", "")
-			_, _ = s.sbClient.PatchDB("app_wallets", fmt.Sprintf("user_id=eq.%s", uplineID), map[string]interface{}{
-				"balance": balanceAfter,
-			}, "")
-		}()
-	}
-
+	log.Printf("💰 [CREDIT COMMISSION SUCCESS] Komisi Rp %.0f berhasil masuk ke dompet upline %s (TrxCode: %s, Saldo: Rp %.0f)", amount, uplineID, trxCode, balanceAfter)
 	return trx, nil
 }
 

@@ -29,6 +29,8 @@ type Service interface {
 	GetOrderDetail(orderCode string) (*Order, error)
 	GetUserOrders(userID string) []*Order
 	GetAllOrders() []*Order
+	ApproveOrder(adminUser *supabase.User, orderCode, serialNumber, notes string) (*Order, error)
+	RejectOrder(adminUser *supabase.User, token, orderCode, reason string) (*Order, error)
 	SetAgencyResolver(ar AgencyResolver)
 }
 
@@ -799,3 +801,132 @@ func formatRupiah(amount float64) string {
 	}
 	return string(res)
 }
+
+func (s *service) ApproveOrder(adminUser *supabase.User, orderCode, serialNumber, notes string) (*Order, error) {
+	clean := strings.ToUpper(strings.TrimSpace(orderCode))
+	order, ok := s.repo.GetOrderByCode(clean)
+	if !ok {
+		for _, o := range s.repo.GetAllOrders() {
+			if strings.EqualFold(o.OrderCode, clean) || strings.EqualFold(o.WalletTrxCode, clean) || strings.EqualFold(o.ID, clean) {
+				order = o
+				ok = true
+				break
+			}
+		}
+	}
+
+	if !ok && s.walletService != nil {
+		allTrx := s.walletService.GetAllTransactions()
+		for _, trx := range allTrx {
+			if trx != nil && (strings.EqualFold(trx.TransactionCode, clean) || strings.EqualFold(trx.ReferenceID, clean) || strings.EqualFold(trx.ID, clean)) {
+				if mapped := mapWalletTrxToOrder(trx); mapped != nil {
+					order = mapped
+					s.repo.CreateOrder(order)
+					ok = true
+					break
+				}
+			}
+		}
+	}
+
+	if !ok || order == nil {
+		return nil, errors.New("Order tidak ditemukan di antrean sistem")
+	}
+
+	if order.Status == StatusSuccess {
+		return order, nil
+	}
+	if order.Status == StatusFailed || order.Status == StatusRefunded {
+		return nil, errors.New("Order sudah berstatus gagal atau telah direfund")
+	}
+
+	sn := strings.TrimSpace(serialNumber)
+	if sn == "" {
+		sn = fmt.Sprintf("MANUAL-%s", time.Now().Format("060102150405"))
+	}
+
+	order.Status = StatusSuccess
+	order.SerialNumber = sn
+	now := time.Now()
+	order.CompletedAt = &now
+	order.ErrorMessage = ""
+
+	// Kreditkan komisi markup ke agen upline jika belum dikreditkan
+	if order.MarkupAmount > 0 && order.UplineID != "" && order.CommissionStatus != "CREDITED" {
+		userName := order.UserEmail
+		if _, comErr := s.walletService.CreditCommission(order.UplineID, order.MarkupAmount, order.OrderCode, userName, order.ProductName); comErr == nil {
+			order.CommissionStatus = "CREDITED"
+			log.Printf("💰 [COMMISSION SUCCESS] Komisi Rp %.0f berhasil dikreditkan ke agen upline %s untuk order %s", order.MarkupAmount, order.UplineID, order.OrderCode)
+		}
+	}
+
+	s.repo.UpdateOrder(order)
+	log.Printf("✅ [MANUAL ORDER APPROVED] Order %s berhasil disetujui oleh admin! SN=%s", order.OrderCode, sn)
+	return order, nil
+}
+
+func (s *service) RejectOrder(adminUser *supabase.User, token, orderCode, reason string) (*Order, error) {
+	clean := strings.ToUpper(strings.TrimSpace(orderCode))
+	order, ok := s.repo.GetOrderByCode(clean)
+	if !ok {
+		for _, o := range s.repo.GetAllOrders() {
+			if strings.EqualFold(o.OrderCode, clean) || strings.EqualFold(o.WalletTrxCode, clean) || strings.EqualFold(o.ID, clean) {
+				order = o
+				ok = true
+				break
+			}
+		}
+	}
+
+	if !ok && s.walletService != nil {
+		allTrx := s.walletService.GetAllTransactions()
+		for _, trx := range allTrx {
+			if trx != nil && (strings.EqualFold(trx.TransactionCode, clean) || strings.EqualFold(trx.ReferenceID, clean) || strings.EqualFold(trx.ID, clean)) {
+				if mapped := mapWalletTrxToOrder(trx); mapped != nil {
+					order = mapped
+					s.repo.CreateOrder(order)
+					ok = true
+					break
+				}
+			}
+		}
+	}
+
+	if !ok || order == nil {
+		return nil, errors.New("Order tidak ditemukan di antrean sistem")
+	}
+
+	if order.Status == StatusSuccess {
+		return nil, errors.New("Order sudah berhasil disetujui sebelumnya. Gunakan fitur refund jika ingin membatalkan.")
+	}
+	if order.Status == StatusRefunded || order.Status == StatusFailed {
+		return order, nil
+	}
+
+	if strings.TrimSpace(reason) == "" {
+		reason = "Pesanan produk manual ditolak oleh admin"
+	}
+
+	order.Status = StatusRefunded
+	order.ErrorMessage = reason
+
+	refundReq := wallet.RefundRequest{
+		TransactionCode: order.WalletTrxCode,
+		Amount:          order.Price,
+		TargetUserID:    order.UserID,
+		Reason:          fmt.Sprintf("Pesanan %s ditolak: %s", order.OrderCode, reason),
+	}
+
+	if s.walletService != nil {
+		if _, _, err := s.walletService.Refund(adminUser, token, refundReq); err != nil {
+			log.Printf("⚠️ Gagal refund untuk order %s: %v", order.OrderCode, err)
+		} else {
+			log.Printf("💰 Saldo user %s berhasil direfund Rp %.0f untuk order %s", order.UserID, order.Price, order.OrderCode)
+		}
+	}
+
+	s.repo.UpdateOrder(order)
+	log.Printf("❌ [MANUAL ORDER REJECTED] Order %s berhasil ditolak dan saldo direfund!", order.OrderCode)
+	return order, nil
+}
+

@@ -53,13 +53,19 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/history", h.GetHistory)
 	r.Get("/{order_code}", h.GetOrderDetail)
 
-	// Admin-only monitoring
+	// Admin-only monitoring & fulfillment
 	r.Group(func(adminOnly chi.Router) {
 		adminOnly.Use(middleware.RequireRoles("admin", "superadmin"))
 		adminOnly.Get("/admin/all", h.ListAllOrders)
+		adminOnly.Post("/admin/orders/{code}/approve", h.ApproveOrder)
+		adminOnly.Post("/admin/orders/{code}/reject", h.RejectOrder)
 	})
 
 	return r
+}
+
+func (h *Handler) GetService() Service {
+	return h.service
 }
 
 // InquiryBill handles checking a postpaid bill (PDAM, PLN Pasca, BPJS, etc.)
@@ -202,6 +208,75 @@ func (h *Handler) ListAllOrders(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"count":  len(orders),
 		"data":   orders,
+	})
+}
+
+type ApproveOrderPayload struct {
+	SerialNumber string `json:"serial_number"`
+	Notes        string `json:"notes"`
+}
+
+type RejectOrderPayload struct {
+	Reason string `json:"reason"`
+}
+
+// ApproveOrder handles admin approval for manual product orders
+func (h *Handler) ApproveOrder(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		code = chi.URLParam(r, "order_code")
+	}
+
+	var req ApproveOrderPayload
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	adminUser := middleware.GetUserFromContext(r.Context())
+	order, err := h.service.ApproveOrder(adminUser, code, req.SerialNumber, req.Notes)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Pesanan berhasil disetujui & diselesaikan",
+		"data":    order,
+	})
+}
+
+// RejectOrder handles admin rejection and auto-refund for manual product orders
+func (h *Handler) RejectOrder(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		code = chi.URLParam(r, "order_code")
+	}
+
+	var req RejectOrderPayload
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	adminUser := middleware.GetUserFromContext(r.Context())
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+
+	order, err := h.service.RejectOrder(adminUser, token, code, req.Reason)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Pesanan ditolak dan saldo telah dikembalikan ke pengguna",
+		"data":    order,
 	})
 }
 

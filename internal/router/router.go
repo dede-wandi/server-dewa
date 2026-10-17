@@ -170,6 +170,9 @@ func New(cfg *config.Config) *chi.Mux {
 			adminRouter.Mount("/news", articleHandler.AdminRoutes())
 			adminRouter.Mount("/notifications", notificationHandler.AdminRoutes())
 			adminRouter.Mount("/payment-channels", paymentChannelHandler.AdminRoutes())
+			adminRouter.Get("/orders", transactionHandler.ListAllOrders)
+			adminRouter.Post("/orders/{code}/approve", transactionHandler.ApproveOrder)
+			adminRouter.Post("/orders/{code}/reject", transactionHandler.RejectOrder)
 		})
 
 		// PROTECTED MICROSERVICES: Semua modul transaksi & dompet wajib melalui autentikasi login Supabase
